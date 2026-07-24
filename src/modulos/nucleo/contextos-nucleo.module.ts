@@ -1,0 +1,41 @@
+import { Module } from '@nestjs/common';
+import { AuditModule } from './auditoria/auditoria.module';
+import { CashRegisterModule } from './caja/caja.module';
+import { CatalogModule } from './catalogo/catalogo.module';
+import { CustomersModule } from './clientes/clientes.module';
+import { CompaniesModule } from './empresas/empresas.module';
+import { FiscalModule } from './fiscal/fiscal.module';
+import { IdentityModule } from './identidad/identidad.module';
+import { IntegrationsModule } from './integraciones/integraciones.module';
+import { InventoryModule } from './inventario/inventario.module';
+import { PaymentsModule } from './pagos/pagos.module';
+import { PurchasesModule } from './compras/compras.module';
+import { ReportsModule } from './reportes/reportes.module';
+import { BranchesModule } from './sucursales/sucursales.module';
+import { SuppliersModule } from './proveedores/proveedores.module';
+import { SalesModule } from './ventas/ventas.module';
+import { TenancyModule } from './multitenencia/multitenencia.module';
+import { UsersModule } from './usuarios/usuarios.module';
+
+@Module({
+  imports: [
+    TenancyModule,
+    IdentityModule,
+    UsersModule,
+    CompaniesModule,
+    BranchesModule,
+    CatalogModule,
+    InventoryModule,
+    SalesModule,
+    CashRegisterModule,
+    PaymentsModule,
+    FiscalModule,
+    PurchasesModule,
+    CustomersModule,
+    SuppliersModule,
+    ReportsModule,
+    IntegrationsModule,
+    AuditModule,
+  ],
+})
+export class CoreContextsModule {}

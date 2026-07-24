@@ -1,0 +1,927 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../../generado/administracion"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EstadoCicloVidaInquilino {
+  APROVISIONANDO
+  EN_PRUEBA
+  ACTIVO
+  PERIODO_GRACIA
+  SUSPENDIDO
+  PENDIENTE_ELIMINACION
+  ELIMINADO
+}
+
+enum TipoPeriodoCicloVida {
+  PRUEBA
+  GRACIA
+  SUSPENSION
+}
+
+enum EstadoPeriodoCicloVida {
+  PROGRAMADO
+  ACTIVO
+  FINALIZADO
+  CANCELADO
+}
+
+enum EstadoVersionPlan {
+  BORRADOR
+  ACTIVA
+  RETIRADA
+}
+
+enum TipoValorCaracteristica {
+  BOOLEANO
+  ENTERO
+  DECIMAL
+  TEXTO
+}
+
+enum IntervaloFacturacion {
+  UNICO
+  DIA
+  SEMANA
+  MES
+  ANIO
+}
+
+enum AlcancePrecioCatalogo {
+  VERSION_PLAN
+  CARACTERISTICA
+}
+
+enum EstadoSuscripcion {
+  INCOMPLETA
+  EN_PRUEBA
+  ACTIVA
+  IMPAGA
+  PAUSADA
+  CANCELADA
+  EXPIRADA
+  PENDIENTE_CANCELACION
+}
+
+enum TipoItemSuscripcion {
+  PLAN_BASE
+  ADICIONAL
+  MEDIDO
+}
+
+enum EstadoCuentaFacturacion {
+  ACTIVA
+  MOROSA
+  SUSPENDIDA
+  CERRADA
+}
+
+enum EstadoFactura {
+  BORRADOR
+  ABIERTA
+  PAGADA
+  ANULADA
+  INCOBRABLE
+  VENCIDA
+}
+
+enum EstadoPago {
+  PENDIENTE
+  PROCESANDO
+  EXITOSO
+  FALLIDO
+  CANCELADO
+  DEVUELTO
+  DEVUELTO_PARCIALMENTE
+  REQUIERE_ACCION
+  EXPIRADO
+}
+
+enum AgregacionUso {
+  SUMA
+  CONTEO
+  MAXIMO
+  ULTIMO
+  UNICO
+}
+
+enum PeriodoUso {
+  HORA
+  DIA
+  MES
+  PERIODO_FACTURACION
+}
+
+enum EstadoIntegracion {
+  PENDIENTE
+  ACTIVA
+  ERROR
+  DESHABILITADA
+}
+
+enum EstadoIncorporacion {
+  NO_INICIADA
+  EN_PROGRESO
+  COMPLETADA
+  BLOQUEADA
+  CANCELADA
+}
+
+enum EstadoDominio {
+  PENDIENTE
+  VERIFICADO
+  FALLIDO
+  DESHABILITADO
+}
+
+enum EstadoClienteApi {
+  ACTIVO
+  REVOCADO
+  EXPIRADO
+}
+
+enum EstadoMensaje {
+  PENDIENTE
+  PROCESANDO
+  PROCESADO
+  FALLIDO
+  CARTA_MUERTA
+}
+
+enum EstadoEntregaWebhook {
+  PENDIENTE
+  ENTREGANDO
+  EXITOSA
+  FALLIDA
+  CARTA_MUERTA
+  CANCELADA
+}
+
+enum EstadoPermisoAcceso {
+  PENDIENTE
+  ACTIVO
+  REVOCADO
+  EXPIRADO
+}
+
+/// SQL migrations must enable and FORCE PostgreSQL RLS on tenant-owned tables and define tenant-isolation policies.
+model Tenant {
+  id            String  @id @default(uuid()) @db.Uuid
+  slug          String  @unique
+  nombreVisible String
+  razonSocial   String?
+
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+  eliminadoEn   DateTime?
+
+  control               TenantControl?
+  configuracion         TenantConfiguration?
+  periodosCicloVida     TenantLifecyclePeriod[]
+  transicionesCicloVida TenantLifecycleTransition[]
+  suscripciones         Subscription[]
+  cuentasFacturacion    BillingAccount[]
+  eventosUso            UsageEvent[]
+  agregadosUso          UsageAggregate[]
+  integraciones         ProviderIntegration[]
+  incorporacion         TenantOnboarding?
+  dominios              TenantDomain[]
+  clientesApi           ApiClient[]
+  registrosAuditoria    ManagementAuditLog[]
+  mensajesSalida        AdministrationOutbox[]
+  mensajesEntrada       AdministrationInbox[]
+  puntosWebhook         WebhookEndpoint[]
+  permisosAccesoSoporte SupportAccessGrant[]
+
+  @@index([eliminadoEn])
+}
+
+model TenantControl {
+  inquilinoId             String                   @id @db.Uuid
+  lifecycleState          EstadoCicloVidaInquilino @default(APROVISIONANDO)
+  motivoEstado            String?
+  estadoCambiadoEn        DateTime                 @default(now())
+  aprovisionadoEn         DateTime?
+  activadoEn              DateTime?
+  suspendidoEn            DateTime?
+  eliminacionProgramadaEn DateTime?
+  metadata                Json?
+  creadoEn                DateTime                 @default(now())
+  actualizadoEn           DateTime                 @updatedAt
+
+  tenant Tenant @relation(fields: [inquilinoId], references: [id], onDelete: Cascade)
+
+  @@index([lifecycleState, estadoCambiadoEn])
+  @@index([eliminacionProgramadaEn])
+}
+
+model TenantConfiguration {
+  inquilinoId         String   @id @db.Uuid
+  region              String
+  timezone            String
+  locale              String?
+  dataResidencyRegion String?
+  maxUsers            Int?
+  maxLocations        Int?
+  maxApiClients       Int?
+  maxDomains          Int?
+  settings            Json?
+  creadoEn            DateTime @default(now())
+  actualizadoEn       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [inquilinoId], references: [id], onDelete: Cascade)
+
+  @@index([region])
+}
+
+model TenantLifecyclePeriod {
+  id            String                 @id @default(uuid()) @db.Uuid
+  inquilinoId   String                 @db.Uuid
+  tipo          TipoPeriodoCicloVida
+  estado        EstadoPeriodoCicloVida @default(PROGRAMADO)
+  motivo        String?
+  iniciaEn      DateTime
+  terminaEn     DateTime?
+  terminadoEn   DateTime?
+  creadoEn      DateTime               @default(now())
+  actualizadoEn DateTime               @updatedAt
+
+  tenant Tenant @relation(fields: [inquilinoId], references: [id], onDelete: Cascade)
+
+  @@index([inquilinoId, tipo, estado])
+  @@index([estado, iniciaEn, terminaEn])
+}
+
+model TenantLifecycleTransition {
+  id            String                    @id @default(uuid()) @db.Uuid
+  inquilinoId   String                    @db.Uuid
+  fromState     EstadoCicloVidaInquilino?
+  toState       EstadoCicloVidaInquilino
+  motivo        String?
+  actorType     String
+  actorId       String?
+  correlationId String?
+  occurredAt    DateTime                  @default(now())
+  metadata      Json?
+
+  tenant Tenant @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, occurredAt])
+  @@index([correlationId])
+}
+
+model Plan {
+  id            String   @id @default(uuid()) @db.Uuid
+  codigo        String   @unique
+  nombre        String
+  descripcion   String?
+  isActive      Boolean  @default(true)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  versions PlanVersion[]
+}
+
+model PlanVersion {
+  id              String            @id @default(uuid()) @db.Uuid
+  planId          String            @db.Uuid
+  version         Int
+  estado          EstadoVersionPlan @default(BORRADOR)
+  vigenteDesde    DateTime?
+  vigenteHasta    DateTime?
+  trialDays       Int?
+  gracePeriodDays Int               @default(0)
+  metadata        Json?
+  creadoEn        DateTime          @default(now())
+  actualizadoEn   DateTime          @updatedAt
+
+  plan          Plan           @relation(fields: [planId], references: [id], onDelete: Restrict)
+  features      PlanFeature[]
+  prices        CatalogPrice[]
+  suscripciones Subscription[]
+
+  @@unique([planId, version])
+  @@index([estado, vigenteDesde, vigenteHasta])
+}
+
+model Feature {
+  id            String                  @id @default(uuid()) @db.Uuid
+  clave         String                  @unique
+  nombre        String
+  descripcion   String?
+  valorType     TipoValorCaracteristica @default(BOOLEANO)
+  unit          String?
+  isActive      Boolean                 @default(true)
+  creadoEn      DateTime                @default(now())
+  actualizadoEn DateTime                @updatedAt
+
+  planFeatures PlanFeature[]
+  entitlements SubscriptionEntitlement[]
+  prices       CatalogPrice[]
+  usageMeters  UsageMeter[]
+}
+
+model PlanFeature {
+  versionPlanId    String      @db.Uuid
+  caracteristicaId String      @db.Uuid
+  enabled          Boolean     @default(true)
+  limitValue       Decimal?    @db.Decimal(20, 6)
+  valor            String?
+  resetPeriod      PeriodoUso?
+  creadoEn         DateTime    @default(now())
+  actualizadoEn    DateTime    @updatedAt
+
+  planVersion PlanVersion @relation(fields: [versionPlanId], references: [id], onDelete: Cascade)
+  feature     Feature     @relation(fields: [caracteristicaId], references: [id], onDelete: Restrict)
+
+  @@id([versionPlanId, caracteristicaId])
+  @@index([caracteristicaId])
+}
+
+model CatalogPrice {
+  id               String                @id @default(uuid()) @db.Uuid
+  codigo           String                @unique
+  versionPlanId    String?               @db.Uuid
+  caracteristicaId String?               @db.Uuid
+  scope            AlcancePrecioCatalogo
+  moneda           String                @db.VarChar(3)
+  unitAmount       Decimal               @db.Decimal(20, 6)
+  interval         IntervaloFacturacion
+  intervalCount    Int                   @default(1)
+  includedQuantity Decimal?              @db.Decimal(20, 6)
+  isActive         Boolean               @default(true)
+  vigenteDesde     DateTime?
+  vigenteHasta     DateTime?
+  metadata         Json?
+  creadoEn         DateTime              @default(now())
+  actualizadoEn    DateTime              @updatedAt
+
+  /// SQL migration must CHECK that scope selects exactly one owner: PLAN_VERSION requires only versionPlanId; FEATURE requires only caracteristicaId.
+  planVersion       PlanVersion?       @relation(fields: [versionPlanId], references: [id], onDelete: Restrict)
+  feature           Feature?           @relation(fields: [caracteristicaId], references: [id], onDelete: Restrict)
+  subscriptionItems SubscriptionItem[]
+  invoiceItems      InvoiceItem[]
+
+  @@index([scope, versionPlanId, isActive])
+  @@index([scope, caracteristicaId, isActive])
+}
+
+model Subscription {
+  id                    String            @id @default(uuid()) @db.Uuid
+  inquilinoId           String            @db.Uuid
+  versionPlanId         String            @db.Uuid
+  cuentaFacturacionId   String?           @db.Uuid
+  estado                EstadoSuscripcion
+  proveedor             String?
+  referenciaProveedor   String?
+  iniciadoEn            DateTime
+  trialStartsAt         DateTime?
+  trialEndsAt           DateTime?
+  currentPeriodStartsAt DateTime?
+  currentPeriodEndsAt   DateTime?
+  cancelAtPeriodEnd     Boolean           @default(false)
+  cancelAt              DateTime?
+  canceladoEn           DateTime?
+  terminadoEn           DateTime?
+  creadoEn              DateTime          @default(now())
+  actualizadoEn         DateTime          @updatedAt
+
+  tenant         Tenant                    @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+  planVersion    PlanVersion               @relation(fields: [versionPlanId], references: [id], onDelete: Restrict)
+  billingAccount BillingAccount?           @relation(fields: [inquilinoId, cuentaFacturacionId], references: [inquilinoId, id], onDelete: Restrict)
+  articulos      SubscriptionItem[]
+  entitlements   SubscriptionEntitlement[]
+  invoices       Invoice[]
+  invoiceItems   InvoiceItem[]
+  agregadosUso   UsageAggregate[]
+
+  @@unique([inquilinoId, id])
+  @@unique([inquilinoId, proveedor, referenciaProveedor])
+  @@index([inquilinoId, estado])
+  @@index([inquilinoId, cuentaFacturacionId])
+  @@index([currentPeriodEndsAt])
+}
+
+model SubscriptionItem {
+  id            String              @id @default(uuid()) @db.Uuid
+  inquilinoId   String              @db.Uuid
+  suscripcionId String              @db.Uuid
+  priceId       String              @db.Uuid
+  tipo          TipoItemSuscripcion
+  cantidad      Decimal             @default(1) @db.Decimal(20, 6)
+  iniciaEn      DateTime
+  terminaEn     DateTime?
+  metadata      Json?
+  creadoEn      DateTime            @default(now())
+  actualizadoEn DateTime            @updatedAt
+
+  subscription Subscription  @relation(fields: [inquilinoId, suscripcionId], references: [inquilinoId, id], onDelete: Cascade)
+  price        CatalogPrice  @relation(fields: [priceId], references: [id], onDelete: Restrict)
+  invoiceItems InvoiceItem[]
+
+  @@unique([inquilinoId, suscripcionId, id])
+  @@index([inquilinoId, suscripcionId, tipo])
+  @@index([priceId])
+}
+
+model SubscriptionEntitlement {
+  id               String      @id @default(uuid()) @db.Uuid
+  suscripcionId    String      @db.Uuid
+  caracteristicaId String      @db.Uuid
+  enabled          Boolean?
+  limitValue       Decimal?    @db.Decimal(20, 6)
+  valor            String?
+  resetPeriod      PeriodoUso?
+  motivo           String?
+  vigenteDesde     DateTime    @default(now())
+  vigenteHasta     DateTime?
+  creadoEn         DateTime    @default(now())
+  actualizadoEn    DateTime    @updatedAt
+
+  /// SQL migration must add an exclusion constraint preventing overlapping effective ranges per suscripcionId and caracteristicaId.
+  subscription Subscription @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
+  feature      Feature      @relation(fields: [caracteristicaId], references: [id], onDelete: Restrict)
+
+  @@unique([suscripcionId, caracteristicaId, vigenteDesde])
+  @@index([suscripcionId, caracteristicaId, vigenteDesde, vigenteHasta])
+  @@index([caracteristicaId, vigenteDesde, vigenteHasta])
+}
+
+model BillingAccount {
+  id               String                  @id @default(uuid()) @db.Uuid
+  inquilinoId      String                  @db.Uuid
+  estado           EstadoCuentaFacturacion @default(ACTIVA)
+  nombre           String
+  billingEmail     String?
+  taxId            String?
+  moneda           String                  @db.VarChar(3)
+  locale           String?
+  billingAddress   Json?
+  paymentTermsDays Int                     @default(0)
+  creadoEn         DateTime                @default(now())
+  actualizadoEn    DateTime                @updatedAt
+  cerradoEn        DateTime?
+
+  tenant        Tenant            @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+  clientes      BillingCustomer[]
+  suscripciones Subscription[]
+  invoices      Invoice[]
+  payments      Payment[]
+
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, estado])
+}
+
+model BillingCustomer {
+  id                  String   @id @default(uuid()) @db.Uuid
+  cuentaFacturacionId String   @db.Uuid
+  proveedor           String
+  referenciaProveedor String
+  settings            Json?
+  creadoEn            DateTime @default(now())
+  actualizadoEn       DateTime @updatedAt
+
+  billingAccount BillingAccount @relation(fields: [cuentaFacturacionId], references: [id], onDelete: Cascade)
+
+  @@unique([proveedor, referenciaProveedor])
+  @@unique([cuentaFacturacionId, proveedor])
+}
+
+model Invoice {
+  id                  String        @id @default(uuid()) @db.Uuid
+  inquilinoId         String        @db.Uuid
+  cuentaFacturacionId String        @db.Uuid
+  suscripcionId       String?       @db.Uuid
+  number              String        @unique
+  estado              EstadoFactura @default(BORRADOR)
+  moneda              String        @db.VarChar(3)
+  subtotal            Decimal       @db.Decimal(20, 6)
+  totalDescuento      Decimal       @default(0) @db.Decimal(20, 6)
+  totalImpuesto       Decimal       @default(0) @db.Decimal(20, 6)
+  total               Decimal       @db.Decimal(20, 6)
+  montoDue            Decimal       @db.Decimal(20, 6)
+  montoPaid           Decimal       @default(0) @db.Decimal(20, 6)
+  periodStartsAt      DateTime?
+  periodEndsAt        DateTime?
+  emitidoEn           DateTime?
+  venceEn             DateTime?
+  pagadoEn            DateTime?
+  voidedAt            DateTime?
+  proveedor           String?
+  referenciaProveedor String?
+  metadata            Json?
+  creadoEn            DateTime      @default(now())
+  actualizadoEn       DateTime      @updatedAt
+
+  billingAccount    BillingAccount @relation(fields: [inquilinoId, cuentaFacturacionId], references: [inquilinoId, id], onDelete: Restrict)
+  subscription      Subscription?  @relation(fields: [inquilinoId, suscripcionId], references: [inquilinoId, id], onDelete: Restrict)
+  articulos         InvoiceItem[]  @relation("FacturaItems")
+  subscriptionItems InvoiceItem[]  @relation("FacturaSuscripcionItems")
+  payments          Payment[]
+
+  @@unique([inquilinoId, id])
+  @@unique([inquilinoId, id, suscripcionId])
+  @@unique([inquilinoId, proveedor, referenciaProveedor])
+  @@index([inquilinoId, cuentaFacturacionId, estado, venceEn])
+  @@index([inquilinoId, suscripcionId, periodStartsAt])
+}
+
+model InvoiceItem {
+  id                 String    @id @default(uuid()) @db.Uuid
+  inquilinoId        String    @db.Uuid
+  facturaId          String    @db.Uuid
+  suscripcionId      String?   @db.Uuid
+  subscriptionItemId String?   @db.Uuid
+  priceId            String?   @db.Uuid
+  descripcion        String
+  cantidad           Decimal   @db.Decimal(20, 6)
+  unitAmount         Decimal   @db.Decimal(20, 6)
+  monto              Decimal   @db.Decimal(20, 6)
+  periodStartsAt     DateTime?
+  periodEndsAt       DateTime?
+  metadata           Json?
+  creadoEn           DateTime  @default(now())
+
+  invoice             Invoice           @relation("FacturaItems", fields: [inquilinoId, facturaId], references: [inquilinoId, id], onDelete: Cascade)
+  subscriptionInvoice Invoice?          @relation("FacturaSuscripcionItems", fields: [inquilinoId, facturaId, suscripcionId], references: [inquilinoId, id, suscripcionId], onDelete: Cascade)
+  subscription        Subscription?     @relation(fields: [inquilinoId, suscripcionId], references: [inquilinoId, id], onDelete: Restrict)
+  /// SQL migration must CHECK that suscripcionId and subscriptionItemId are either both null or both non-null.
+  subscriptionItem    SubscriptionItem? @relation(fields: [inquilinoId, suscripcionId, subscriptionItemId], references: [inquilinoId, suscripcionId, id], onDelete: Restrict)
+  price               CatalogPrice?     @relation(fields: [priceId], references: [id], onDelete: SetNull)
+
+  @@index([inquilinoId, facturaId])
+  @@index([inquilinoId, suscripcionId, subscriptionItemId])
+}
+
+model Payment {
+  id                  String     @id @default(uuid()) @db.Uuid
+  inquilinoId         String     @db.Uuid
+  cuentaFacturacionId String     @db.Uuid
+  facturaId           String?    @db.Uuid
+  estado              EstadoPago @default(PENDIENTE)
+  proveedor           String
+  referenciaProveedor String?
+  idempotencyKey      String
+  moneda              String     @db.VarChar(3)
+  monto               Decimal    @db.Decimal(20, 6)
+  refundedAmount      Decimal    @default(0) @db.Decimal(20, 6)
+  codigoError         String?
+  mensajeError        String?
+  procesadoEn         DateTime?
+  creadoEn            DateTime   @default(now())
+  actualizadoEn       DateTime   @updatedAt
+
+  billingAccount BillingAccount @relation(fields: [inquilinoId, cuentaFacturacionId], references: [inquilinoId, id], onDelete: Restrict)
+  invoice        Invoice?       @relation(fields: [inquilinoId, facturaId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@unique([inquilinoId, proveedor, referenciaProveedor])
+  @@unique([inquilinoId, proveedor, idempotencyKey])
+  @@index([inquilinoId, cuentaFacturacionId, estado, creadoEn])
+  @@index([inquilinoId, facturaId])
+}
+
+model UsageMeter {
+  id               String        @id @default(uuid()) @db.Uuid
+  clave            String        @unique
+  nombre           String
+  descripcion      String?
+  caracteristicaId String?       @db.Uuid
+  aggregation      AgregacionUso
+  unit             String
+  period           PeriodoUso
+  isActive         Boolean       @default(true)
+  creadoEn         DateTime      @default(now())
+  actualizadoEn    DateTime      @updatedAt
+
+  feature   Feature?         @relation(fields: [caracteristicaId], references: [id], onDelete: Restrict)
+  eventos   UsageEvent[]
+  agregados UsageAggregate[]
+
+  @@index([caracteristicaId])
+}
+
+model UsageEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  inquilinoId    String   @db.Uuid
+  meterId        String   @db.Uuid
+  source         String
+  idempotencyKey String
+  cantidad       Decimal  @default(1) @db.Decimal(20, 6)
+  subjectId      String?
+  occurredAt     DateTime
+  recibidoEn     DateTime @default(now())
+  dimensions     Json?
+
+  tenant Tenant     @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+  meter  UsageMeter @relation(fields: [meterId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, source, idempotencyKey])
+  @@index([inquilinoId, meterId, occurredAt])
+  @@index([meterId, occurredAt])
+}
+
+model UsageAggregate {
+  id                    String     @id @default(uuid()) @db.Uuid
+  inquilinoId           String     @db.Uuid
+  suscripcionId         String     @db.Uuid
+  meterId               String     @db.Uuid
+  period                PeriodoUso
+  /// SQL migration must CHECK billing-period and aggregate-period end timestamps are after their starts.
+  billingPeriodStartsAt DateTime
+  billingPeriodEndsAt   DateTime
+  periodStart           DateTime
+  periodEnd             DateTime
+  cantidad              Decimal    @default(0) @db.Decimal(20, 6)
+  eventCount            BigInt     @default(0)
+  calculatedAt          DateTime   @default(now())
+  actualizadoEn         DateTime   @updatedAt
+
+  tenant       Tenant       @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+  subscription Subscription @relation(fields: [inquilinoId, suscripcionId], references: [inquilinoId, id], onDelete: Restrict)
+  meter        UsageMeter   @relation(fields: [meterId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, suscripcionId, meterId, period, billingPeriodStartsAt, periodStart])
+  @@index([inquilinoId, suscripcionId, billingPeriodStartsAt, billingPeriodEndsAt])
+  @@index([meterId, periodStart, periodEnd])
+}
+
+model ProviderIntegration {
+  id                String            @id @default(uuid()) @db.Uuid
+  inquilinoId       String            @db.Uuid
+  proveedor         String
+  purpose           String
+  estado            EstadoIntegracion @default(PENDIENTE)
+  externalReference String?
+  settings          Json?
+  ultimoError       String?
+  lastSyncedAt      DateTime?
+  creadoEn          DateTime          @default(now())
+  actualizadoEn     DateTime          @updatedAt
+
+  tenant             Tenant                      @relation(fields: [inquilinoId], references: [id], onDelete: Cascade)
+  referenciaSecretas ProviderIntegrationSecret[]
+
+  @@unique([inquilinoId, proveedor, purpose])
+  @@index([proveedor, estado])
+}
+
+model ProviderIntegrationSecret {
+  id                String   @id @default(uuid()) @db.Uuid
+  integrationId     String   @db.Uuid
+  nombre            String
+  gestorSecreto     String
+  referenciaSecreta String
+  version           String?
+  creadoEn          DateTime @default(now())
+  actualizadoEn     DateTime @updatedAt
+
+  integration ProviderIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, nombre])
+  @@index([gestorSecreto, referenciaSecreta])
+}
+
+model TenantOnboarding {
+  id            String              @id @default(uuid()) @db.Uuid
+  inquilinoId   String              @unique @db.Uuid
+  estado        EstadoIncorporacion @default(NO_INICIADA)
+  currentStep   String?
+  iniciadoEn    DateTime?
+  completadoEn  DateTime?
+  blockedReason String?
+  creadoEn      DateTime            @default(now())
+  actualizadoEn DateTime            @updatedAt
+
+  tenant Tenant           @relation(fields: [inquilinoId], references: [id], onDelete: Cascade)
+  pasos  OnboardingStep[]
+}
+
+model OnboardingStep {
+  id              String              @id @default(uuid()) @db.Uuid
+  incorporacionId String              @db.Uuid
+  clave           String
+  estado          EstadoIncorporacion @default(NO_INICIADA)
+  posicion        Int
+  iniciadoEn      DateTime?
+  completadoEn    DateTime?
+  details         Json?
+  creadoEn        DateTime            @default(now())
+  actualizadoEn   DateTime            @updatedAt
+
+  incorporacion TenantOnboarding @relation(fields: [incorporacionId], references: [id], onDelete: Cascade)
+
+  @@unique([incorporacionId, clave])
+  @@unique([incorporacionId, posicion])
+}
+
+model TenantDomain {
+  id                 String        @id @default(uuid()) @db.Uuid
+  inquilinoId        String        @db.Uuid
+  hostnombre         String        @unique
+  estado             EstadoDominio @default(PENDIENTE)
+  verificationMethod String?
+  verificationToken  String?
+  verifiedAt         DateTime?
+  isPrimary          Boolean       @default(false)
+  creadoEn           DateTime      @default(now())
+  actualizadoEn      DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [inquilinoId], references: [id], onDelete: Cascade)
+
+  @@index([inquilinoId, estado])
+}
+
+model ApiClient {
+  id                String           @id @default(uuid()) @db.Uuid
+  inquilinoId       String           @db.Uuid
+  clientId          String           @unique
+  nombre            String
+  estado            EstadoClienteApi @default(ACTIVO)
+  scopes            String[]
+  gestorSecreto     String
+  referenciaSecreta String
+  versionSecreta    String?
+  lastUsedAt        DateTime?
+  venceEn           DateTime?
+  revokedAt         DateTime?
+  creadoEn          DateTime         @default(now())
+  actualizadoEn     DateTime         @updatedAt
+
+  tenant Tenant @relation(fields: [inquilinoId], references: [id], onDelete: Cascade)
+
+  @@index([inquilinoId, estado])
+  @@index([venceEn])
+}
+
+model ManagementAuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  inquilinoId   String?  @db.Uuid
+  actorType     String
+  actorId       String?
+  actorIp       String?
+  action        String
+  entityType    String
+  entityId      String
+  correlationId String?
+  motivo        String?
+  changes       Json?
+  metadata      Json?
+  occurredAt    DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, occurredAt])
+  @@index([entityType, entityId, occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([correlationId])
+}
+
+model AdministrationOutbox {
+  id               String        @id @default(uuid()) @db.Uuid
+  inquilinoId      String?       @db.Uuid
+  aggregateType    String
+  aggregateId      String
+  eventType        String
+  eventVersion     Int           @default(1)
+  source           String
+  /// Required stable scope clave: tenant UUID for tenant eventos, explicit global nombrespace otherwise. SQL migration must CHECK tenant scopes match inquilinoId.
+  idempotencyScope String
+  idempotencyKey   String
+  correlationId    String?
+  carga            Json
+  encabezados      Json?
+  estado           EstadoMensaje @default(PENDIENTE)
+  attemptCount     Int           @default(0)
+  disponibleEn     DateTime      @default(now())
+  bloqueadoEn      DateTime?
+  lockedBy         String?
+  publicadoEn      DateTime?
+  ultimoError      String?
+  creadoEn         DateTime      @default(now())
+  actualizadoEn    DateTime      @updatedAt
+
+  tenant Tenant? @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+
+  @@unique([source, idempotencyScope, idempotencyKey])
+  @@index([estado, disponibleEn])
+  @@index([aggregateType, aggregateId, creadoEn])
+  @@index([inquilinoId, creadoEn])
+}
+
+model AdministrationInbox {
+  id             String        @id @default(uuid()) @db.Uuid
+  inquilinoId    String?       @db.Uuid
+  source         String
+  messageId      String
+  eventType      String
+  idempotencyKey String
+  correlationId  String?
+  carga          Json
+  estado         EstadoMensaje @default(PENDIENTE)
+  attemptCount   Int           @default(0)
+  disponibleEn   DateTime      @default(now())
+  bloqueadoEn    DateTime?
+  lockedBy       String?
+  procesadoEn    DateTime?
+  ultimoError    String?
+  recibidoEn     DateTime      @default(now())
+  actualizadoEn  DateTime      @updatedAt
+
+  tenant Tenant? @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+
+  @@unique([source, messageId])
+  @@unique([source, idempotencyKey])
+  @@index([estado, disponibleEn])
+  @@index([inquilinoId, recibidoEn])
+}
+
+model WebhookEndpoint {
+  id                     String    @id @default(uuid()) @db.Uuid
+  inquilinoId            String    @db.Uuid
+  url                    String
+  descripcion            String?
+  eventosSuscritos       String[]
+  isActive               Boolean   @default(true)
+  gestorSecreto          String
+  signingSecretReference String
+  signingSecretVersion   String?
+  failureCount           Int       @default(0)
+  deshabilitadoEn        DateTime?
+  creadoEn               DateTime  @default(now())
+  actualizadoEn          DateTime  @updatedAt
+
+  tenant   Tenant            @relation(fields: [inquilinoId], references: [id], onDelete: Cascade)
+  entregas WebhookDelivery[]
+
+  @@index([inquilinoId, isActive])
+}
+
+model WebhookDelivery {
+  id               String               @id @default(uuid()) @db.Uuid
+  endpointId       String               @db.Uuid
+  eventId          String
+  eventType        String
+  idempotencyKey   String               @unique
+  carga            Json
+  estado           EstadoEntregaWebhook @default(PENDIENTE)
+  attemptCount     Int                  @default(0)
+  proximoIntentoEn DateTime             @default(now())
+  estadoRespuesta  Int?
+  cuerpoRespuesta  String?
+  ultimoError      String?
+  entregadoEn      DateTime?
+  creadoEn         DateTime             @default(now())
+  actualizadoEn    DateTime             @updatedAt
+
+  endpoint WebhookEndpoint          @relation(fields: [endpointId], references: [id], onDelete: Restrict)
+  intentos WebhookDeliveryAttempt[]
+
+  @@unique([endpointId, eventId])
+  @@index([estado, proximoIntentoEn])
+  @@index([endpointId, creadoEn])
+}
+
+model WebhookDeliveryAttempt {
+  id              String    @id @default(uuid()) @db.Uuid
+  deliveryId      String    @db.Uuid
+  attemptNumber   Int
+  requestedAt     DateTime  @default(now())
+  completadoEn    DateTime?
+  estadoRespuesta Int?
+  durationMs      Int?
+  error           String?
+
+  delivery WebhookDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@unique([deliveryId, attemptNumber])
+}
+
+model SupportAccessGrant {
+  id              String              @id @default(uuid()) @db.Uuid
+  inquilinoId     String              @db.Uuid
+  principalType   String
+  principalId     String
+  solicitadoPorId String?
+  aprobadoPorId   String?
+  estado          EstadoPermisoAcceso @default(PENDIENTE)
+  scopes          String[]
+  motivo          String
+  iniciaEn        DateTime
+  venceEn         DateTime
+  approvedAt      DateTime?
+  revokedAt       DateTime?
+  revokedById     String?
+  revokeReason    String?
+  creadoEn        DateTime            @default(now())
+  actualizadoEn   DateTime            @updatedAt
+
+  tenant Tenant @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, estado, venceEn])
+  @@index([principalId, estado, venceEn])
+}

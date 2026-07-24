@@ -1,0 +1,2168 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../../generado/operaciones"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Prisma schema cannot express PostgreSQL CHECK constraints or row-level security.
+/// Add those controls in SQL migrations and keep tenant context enforced in application transactions.
+
+enum EstadoRegistro {
+  ACTIVO
+  INACTIVO
+  SUSPENDIDO
+  ARCHIVADO
+  ELIMINADO
+}
+
+enum EstadoMembresia {
+  INVITADA
+  PENDIENTE_APROBACION
+  ACTIVA
+  SUSPENDIDA
+  REVOCADA
+  VENCIDA
+}
+
+enum EfectoPolitica {
+  PERMITIR
+  DENEGAR
+}
+
+enum TipoProducto {
+  ESTANDAR
+  SERVICIO
+  PAQUETE
+}
+
+enum TipoCodigoBarras {
+  EAN13
+  EAN8
+  UPC_A
+  CODIGO128
+  QR
+  PLU
+  INTERNO
+}
+
+enum AfectacionImpuesto {
+  GRAVADO
+  EXONERADO
+  INAFECTO
+  GRATUITO
+  EXPORTACION
+}
+
+enum TipoMovimientoInventario {
+  APERTURA
+  RECEPCION_COMPRA
+  DEVOLUCION_COMPRA
+  VENTA
+  DEVOLUCION_VENTA
+  AJUSTE_ENTRADA
+  AJUSTE_SALIDA
+  TRANSFERENCIA_SALIDA
+  TRANSFERENCIA_ENTRADA
+  GANANCIA_CONTEO
+  PERDIDA_CONTEO
+  PRODUCCION_ENTRADA
+  PRODUCCION_SALIDA
+}
+
+enum EstadoReservaInventario {
+  ACTIVA
+  PARCIALMENTE_ATENDIDA
+  ATENDIDA
+  LIBERADA
+  VENCIDA
+  CANCELADA
+}
+
+enum EstadoTransferenciaInventario {
+  BORRADOR
+  SOLICITADA
+  APROBADA
+  EN_TRANSITO
+  RECIBIDA_PARCIALMENTE
+  RECIBIDA
+  CANCELADA
+  RECHAZADA
+}
+
+enum EstadoConteoInventario {
+  BORRADOR
+  EN_PROGRESO
+  ENVIADO
+  APROBADO
+  CONTABILIZADO
+  CANCELADO
+}
+
+enum EstadoSerieInventario {
+  DISPONIBLE
+  RESERVADA
+  VENDIDA
+  EN_TRANSITO
+  DEVUELTA
+  DANADA
+  DESCARTADA
+}
+
+enum TipoCliente {
+  PERSONA
+  EMPRESA
+}
+
+enum TipoDocumentoIdentidad {
+  DNI
+  RUC
+  CE
+  PASAPORTE
+  ID_TRIBUTARIO_EXTRANJERO
+  OTRO
+}
+
+enum EstadoCuentaCredito {
+  ACTIVA
+  SUSPENDIDA
+  CERRADA
+  BLOQUEADA
+}
+
+enum EstadoDocumentoComercial {
+  BORRADOR
+  CONFIRMADO
+  PARCIALMENTE_ATENDIDO
+  ATENDIDO
+  VENCIDO
+  CANCELADO
+  RECHAZADO
+}
+
+enum EstadoVenta {
+  BORRADOR
+  PENDIENTE_PAGO
+  PAGADA_PARCIALMENTE
+  PAGADA
+  COMPLETADA
+  ANULADA
+  DEVUELTA_PARCIALMENTE
+  DEVUELTA
+  VENCIDA
+}
+
+enum MetodoPago {
+  EFECTIVO
+  TARJETA
+  TRANSFERENCIA_BANCARIA
+  BILLETERA_DIGITAL
+  CREDITO_TIENDA
+  CREDITO
+  OTRO
+}
+
+enum EstadoIntentoPago {
+  CREADO
+  REQUIERE_ACCION
+  PROCESANDO
+  EXITOSO
+  DEVUELTO_PARCIALMENTE
+  DEVUELTO
+  CANCELADO
+  FALLIDO
+  EXPIRADO
+}
+
+enum EstadoTransaccionPago {
+  PENDIENTE
+  AUTORIZADA
+  CAPTURADA
+  LIQUIDADA
+  ANULADA
+  FALLIDA
+  REVERSADA
+}
+
+enum EstadoDevolucionPago {
+  PENDIENTE
+  PROCESANDO
+  EXITOSA
+  FALLIDA
+  CANCELADA
+}
+
+enum EstadoLiquidacion {
+  PENDIENTE
+  EN_TRANSITO
+  PAGADA
+  FALLIDA
+  CANCELADA
+}
+
+enum EstadoDevolucionVenta {
+  BORRADOR
+  PENDIENTE
+  APROBADA
+  COMPLETADA
+  RECHAZADA
+  CANCELADA
+}
+
+enum EstadoSesionCaja {
+  ABIERTA
+  CERRANDO
+  CERRADA
+  CONCILIADA
+  CANCELADA
+}
+
+enum TipoMovimientoCaja {
+  FONDO_APERTURA
+  VENTA_EFECTIVO
+  DEVOLUCION_EFECTIVO
+  INGRESO_EFECTIVO
+  EGRESO_EFECTIVO
+  RETIRO
+  AJUSTE_CIERRE
+}
+
+enum TipoDocumentoElectronico {
+  FACTURA
+  BOLETA
+  NOTA_CREDITO
+  NOTA_DEBITO
+}
+
+enum TerminosPagoFiscal {
+  CONTADO
+  CREDITO
+}
+
+enum EstadoDocumentoElectronico {
+  BORRADOR
+  EN_COLA
+  FIRMADO
+  ENVIADO
+  ACEPTADO
+  ACEPTADO_CON_OBSERVACIONES
+  RECHAZADO
+  BAJA_SOLICITADA
+  ANULADO
+  ERROR
+}
+
+enum EstadoOrdenCompra {
+  BORRADOR
+  APROBADA
+  RECIBIDA_PARCIALMENTE
+  RECIBIDA
+  CERRADA
+  CANCELADA
+}
+
+enum EstadoRecepcionCompra {
+  BORRADOR
+  CONTABILIZADA
+  CANCELADA
+}
+
+enum EstadoCuentaPorCobrarPagar {
+  PENDIENTE
+  PAGADA_PARCIALMENTE
+  PAGADA
+  VENCIDA
+  CANCELADA
+  CASTIGADA
+}
+
+enum EstadoNotificacion {
+  PENDIENTE
+  ENVIADA
+  LEIDA
+  FALLIDA
+  CANCELADA
+}
+
+enum EstadoEntregaWebhook {
+  PENDIENTE
+  ENTREGANDO
+  EXITOSA
+  FALLIDA
+  AGOTADA
+  CANCELADA
+}
+
+model Tenant {
+  id                   String         @id @default(uuid()) @db.Uuid
+  codigo               String         @unique
+  nombre               String
+  estado               EstadoRegistro @default(ACTIVO)
+  idiomaPredeterminado String         @default("es-PE")
+  creadoEn             DateTime       @default(now())
+  actualizadoEn        DateTime       @updatedAt
+  organizaciones       Organization[]
+  identidades          UserIdentity[]
+  roles                Role[]
+}
+
+model Organization {
+  id            String         @id @default(uuid()) @db.Uuid
+  inquilinoId   String         @db.Uuid
+  codigo        String
+  nombre        String
+  estado        EstadoRegistro @default(ACTIVO)
+  creadoEn      DateTime       @default(now())
+  actualizadoEn DateTime       @updatedAt
+  tenant        Tenant         @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+  empresas      Company[]
+  memberships   Membership[]
+
+  @@unique([inquilinoId, codigo])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, estado])
+}
+
+model Company {
+  id                String                   @id @default(uuid()) @db.Uuid
+  inquilinoId       String                   @db.Uuid
+  organizacionId    String                   @db.Uuid
+  razonSocial       String
+  nombreComercial   String?
+  ruc               String                   @db.VarChar(11)
+  sunatUbigeo       String?                  @db.VarChar(6)
+  fiscalAddress     String?
+  moneda            String                   @default("PEN") @db.Char(3)
+  timezone          String                   @default("America/Lima")
+  estado            EstadoRegistro           @default(ACTIVO)
+  creadoEn          DateTime                 @default(now())
+  actualizadoEn     DateTime                 @updatedAt
+  organization      Organization             @relation(fields: [inquilinoId, organizacionId], references: [inquilinoId, id], onDelete: Restrict)
+  sucursales        Branch[]
+  seriesDocumento   DocumentSeries[]
+  certificadosSunat SunatCertificate[]
+  cuentasProveedor  PaymentProviderAccount[]
+  ventas            Sale[]
+
+  @@unique([inquilinoId, ruc])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, organizacionId, estado])
+}
+
+model Branch {
+  id            String          @id @default(uuid()) @db.Uuid
+  inquilinoId   String          @db.Uuid
+  empresaId     String          @db.Uuid
+  codigo        String
+  nombre        String
+  sunatUbigeo   String?         @db.VarChar(6)
+  address       String?
+  phone         String?
+  timezone      String          @default("America/Lima")
+  estado        EstadoRegistro  @default(ACTIVO)
+  creadoEn      DateTime        @default(now())
+  actualizadoEn DateTime        @updatedAt
+  company       Company         @relation(fields: [inquilinoId, empresaId], references: [inquilinoId, id], onDelete: Restrict)
+  almacenes     Warehouse[]
+  cajas         CashRegister[]
+  terminales    Terminal[]
+  ventas        Sale[]
+  quotations    Quotation[]
+  pedidosVenta  SalesOrder[]
+  pedidosCompra PurchaseOrder[]
+  sesionesCaja  CashSession[]
+
+  @@unique([inquilinoId, empresaId, codigo])
+  @@unique([inquilinoId, id])
+  @@unique([inquilinoId, empresaId, id])
+  @@index([inquilinoId, empresaId, estado])
+}
+
+model Warehouse {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  inquilinoId           String                 @db.Uuid
+  sucursalId            String                 @db.Uuid
+  codigo                String
+  nombre                String
+  address               String?
+  estado                EstadoRegistro         @default(ACTIVO)
+  creadoEn              DateTime               @default(now())
+  actualizadoEn         DateTime               @updatedAt
+  branch                Branch                 @relation(fields: [inquilinoId, sucursalId], references: [inquilinoId, id], onDelete: Restrict)
+  saldosInventario      StockBalance[]
+  asientosInventario    InventoryLedgerEntry[]
+  reservations          InventoryReservation[]
+  transferenciasSalida  InventoryTransfer[]    @relation("OrigenTransferencia")
+  transferenciasEntrada InventoryTransfer[]    @relation("DestinoTransferencia")
+  conteosInventario     InventoryCount[]
+  lots                  InventoryLot[]
+  serials               InventorySerial[]
+  receipts              PurchaseReceipt[]
+
+  @@unique([inquilinoId, sucursalId, codigo])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, sucursalId, estado])
+}
+
+model CashRegister {
+  id            String         @id @default(uuid()) @db.Uuid
+  inquilinoId   String         @db.Uuid
+  sucursalId    String         @db.Uuid
+  codigo        String
+  nombre        String
+  estado        EstadoRegistro @default(ACTIVO)
+  creadoEn      DateTime       @default(now())
+  actualizadoEn DateTime       @updatedAt
+  branch        Branch         @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  terminales    Terminal[]
+  sessions      CashSession[]
+
+  @@unique([inquilinoId, sucursalId, codigo])
+  @@index([inquilinoId, sucursalId, estado])
+}
+
+model Terminal {
+  id               String         @id @default(uuid()) @db.Uuid
+  inquilinoId      String         @db.Uuid
+  sucursalId       String         @db.Uuid
+  cajaId           String?        @db.Uuid
+  codigo           String
+  nombre           String
+  claveDispositivo String?
+  estado           EstadoRegistro @default(ACTIVO)
+  ultimoVistoEn    DateTime?
+  creadoEn         DateTime       @default(now())
+  actualizadoEn    DateTime       @updatedAt
+  branch           Branch         @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  cashRegister     CashRegister?  @relation(fields: [cajaId], references: [id], onDelete: Restrict)
+  sessions         CashSession[]
+  ventas           Sale[]
+
+  @@unique([inquilinoId, sucursalId, codigo])
+  @@unique([inquilinoId, claveDispositivo])
+  @@unique([inquilinoId, sucursalId, id])
+  @@index([inquilinoId, sucursalId, estado])
+}
+
+model UserIdentity {
+  id              String         @id @default(uuid()) @db.Uuid
+  inquilinoId     String         @db.Uuid
+  sujetoExterno   String
+  email           String
+  nombreVisible   String
+  estado          EstadoRegistro @default(ACTIVO)
+  ultimoIngresoEn DateTime?
+  creadoEn        DateTime       @default(now())
+  actualizadoEn   DateTime       @updatedAt
+  tenant          Tenant         @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+  memberships     Membership[]
+
+  @@unique([inquilinoId, sujetoExterno])
+  @@unique([inquilinoId, email])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, estado])
+}
+
+model Membership {
+  id                 String            @id @default(uuid()) @db.Uuid
+  inquilinoId        String            @db.Uuid
+  organizacionId     String            @db.Uuid
+  identidadUsuarioId String            @db.Uuid
+  estado             EstadoMembresia   @default(INVITADA)
+  vigenteDesde       DateTime          @default(now())
+  vigenteHasta       DateTime?
+  creadoEn           DateTime          @default(now())
+  actualizadoEn      DateTime          @updatedAt
+  organization       Organization      @relation(fields: [inquilinoId, organizacionId], references: [inquilinoId, id], onDelete: Restrict)
+  userIdentity       UserIdentity      @relation(fields: [inquilinoId, identidadUsuarioId], references: [inquilinoId, id], onDelete: Restrict)
+  roles              MembershipRole[]
+  policies           AccessPolicy[]
+  limits             MembershipLimit[]
+  cashierSales       Sale[]
+
+  @@unique([inquilinoId, organizacionId, identidadUsuarioId])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, identidadUsuarioId, estado])
+}
+
+model Role {
+  id            String           @id @default(uuid()) @db.Uuid
+  inquilinoId   String           @db.Uuid
+  codigo        String
+  nombre        String
+  descripcion   String?
+  isSystem      Boolean          @default(false)
+  estado        EstadoRegistro   @default(ACTIVO)
+  creadoEn      DateTime         @default(now())
+  actualizadoEn DateTime         @updatedAt
+  tenant        Tenant           @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
+  permissions   RolePermission[]
+  memberships   MembershipRole[]
+
+  @@unique([inquilinoId, codigo])
+  @@index([inquilinoId, estado])
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  clave       String           @unique
+  resource    String
+  action      String
+  descripcion String?
+  creadoEn    DateTime         @default(now())
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  inquilinoId String         @db.Uuid
+  rolId       String         @db.Uuid
+  permisoId   String         @db.Uuid
+  effect      EfectoPolitica @default(PERMITIR)
+  constraints Json?
+  role        Role           @relation(fields: [rolId], references: [id], onDelete: Cascade)
+  permission  Permission     @relation(fields: [permisoId], references: [id], onDelete: Restrict)
+
+  @@id([rolId, permisoId])
+  @@index([inquilinoId, permisoId])
+}
+
+model MembershipRole {
+  inquilinoId  String     @db.Uuid
+  membresiaId  String     @db.Uuid
+  rolId        String     @db.Uuid
+  sucursalId   String?    @db.Uuid
+  vigenteHasta DateTime?
+  membership   Membership @relation(fields: [membresiaId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [rolId], references: [id], onDelete: Restrict)
+
+  @@id([membresiaId, rolId])
+  @@index([inquilinoId, sucursalId])
+}
+
+model AccessPolicy {
+  id            String         @id @default(uuid()) @db.Uuid
+  inquilinoId   String         @db.Uuid
+  membresiaId   String         @db.Uuid
+  permissionKey String
+  effect        EfectoPolitica
+  sucursalId    String?        @db.Uuid
+  resourceId    String?
+  conditions    Json?
+  creadoEn      DateTime       @default(now())
+  membership    Membership     @relation(fields: [membresiaId], references: [id], onDelete: Cascade)
+
+  @@index([inquilinoId, membresiaId, permissionKey])
+}
+
+model MembershipLimit {
+  id           String     @id @default(uuid()) @db.Uuid
+  inquilinoId  String     @db.Uuid
+  membresiaId  String     @db.Uuid
+  clave        String
+  decimalValue Decimal?   @db.Decimal(18, 4)
+  integerValue Int?
+  moneda       String?    @db.Char(3)
+  vigenteHasta DateTime?
+  membership   Membership @relation(fields: [membresiaId], references: [id], onDelete: Cascade)
+
+  @@unique([inquilinoId, membresiaId, clave])
+}
+
+model Category {
+  id            String            @id @default(uuid()) @db.Uuid
+  inquilinoId   String            @db.Uuid
+  padreId       String?           @db.Uuid
+  codigo        String
+  nombre        String
+  descripcion   String?
+  estado        EstadoRegistro    @default(ACTIVO)
+  sortOrder     Int               @default(0)
+  creadoEn      DateTime          @default(now())
+  actualizadoEn DateTime          @updatedAt
+  parent        Category?         @relation("ArbolCategoria", fields: [padreId], references: [id], onDelete: Restrict)
+  children      Category[]        @relation("ArbolCategoria")
+  products      ProductCategory[]
+
+  @@unique([inquilinoId, codigo])
+  @@index([inquilinoId, padreId, estado])
+}
+
+model Brand {
+  id            String         @id @default(uuid()) @db.Uuid
+  inquilinoId   String         @db.Uuid
+  codigo        String
+  nombre        String
+  estado        EstadoRegistro @default(ACTIVO)
+  creadoEn      DateTime       @default(now())
+  actualizadoEn DateTime       @updatedAt
+  products      Product[]
+
+  @@unique([inquilinoId, codigo])
+  @@index([inquilinoId, estado])
+}
+
+model UnitOfMeasure {
+  id            String           @id @default(uuid()) @db.Uuid
+  inquilinoId   String           @db.Uuid
+  codigo        String
+  sunatCode     String           @db.VarChar(3)
+  nombre        String
+  symbol        String
+  decimals      Int              @default(3)
+  estado        EstadoRegistro   @default(ACTIVO)
+  creadoEn      DateTime         @default(now())
+  actualizadoEn DateTime         @updatedAt
+  variants      ProductVariant[]
+
+  @@unique([inquilinoId, codigo])
+  @@index([inquilinoId, sunatCode, estado])
+}
+
+model Tax {
+  id               String              @id @default(uuid()) @db.Uuid
+  inquilinoId      String              @db.Uuid
+  codigo           String
+  nombre           String
+  sunatTributeCode String?
+  affectation      AfectacionImpuesto
+  rate             Decimal             @db.Decimal(7, 4)
+  includedInPrice  Boolean             @default(true)
+  vigenteDesde     DateTime?
+  vigenteHasta     DateTime?
+  estado           EstadoRegistro      @default(ACTIVO)
+  creadoEn         DateTime            @default(now())
+  actualizadoEn    DateTime            @updatedAt
+  variantTaxes     ProductVariantTax[]
+
+  @@unique([inquilinoId, codigo])
+  @@index([inquilinoId, estado, vigenteDesde])
+}
+
+model Product {
+  id            String              @id @default(uuid()) @db.Uuid
+  inquilinoId   String              @db.Uuid
+  marcaId       String?             @db.Uuid
+  codigo        String
+  nombre        String
+  descripcion   String?
+  kind          TipoProducto        @default(ESTANDAR)
+  estado        EstadoRegistro      @default(ACTIVO)
+  creadoEn      DateTime            @default(now())
+  actualizadoEn DateTime            @updatedAt
+  brand         Brand?              @relation(fields: [marcaId], references: [id], onDelete: Restrict)
+  categories    ProductCategory[]
+  variants      ProductVariant[]
+  images        ProductImage[]
+  bundleItems   ProductBundleItem[] @relation("ProductoPaquete")
+
+  @@unique([inquilinoId, codigo])
+  @@index([inquilinoId, nombre, estado])
+}
+
+model ProductCategory {
+  inquilinoId String   @db.Uuid
+  productoId  String   @db.Uuid
+  categoriaId String   @db.Uuid
+  isPrimary   Boolean  @default(false)
+  product     Product  @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  category    Category @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+
+  @@id([productoId, categoriaId])
+  @@index([inquilinoId, categoriaId])
+}
+
+model ProductVariant {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  inquilinoId        String                  @db.Uuid
+  productoId         String                  @db.Uuid
+  unidadMedidaId     String                  @db.Uuid
+  sku                String
+  nombre             String
+  attributes         Json?
+  cost               Decimal                 @default(0) @db.Decimal(18, 6)
+  weight             Decimal?                @db.Decimal(18, 6)
+  isStockTracked     Boolean                 @default(true)
+  tracksLots         Boolean                 @default(false)
+  tracksSerials      Boolean                 @default(false)
+  isWeighted         Boolean                 @default(false)
+  isService          Boolean                 @default(false)
+  allowNegativeStock Boolean                 @default(false)
+  estado             EstadoRegistro          @default(ACTIVO)
+  creadoEn           DateTime                @default(now())
+  actualizadoEn      DateTime                @updatedAt
+  product            Product                 @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  unitOfMeasure      UnitOfMeasure           @relation(fields: [unidadMedidaId], references: [id], onDelete: Restrict)
+  barcodigos         ProductBarcodigo[]
+  prices             PriceListItem[]
+  taxes              ProductVariantTax[]
+  bundleComponents   ProductBundleItem[]     @relation("ComponentePaquete")
+  saldosInventario   StockBalance[]
+  asientosInventario InventoryLedgerEntry[]
+  lots               InventoryLot[]
+  serials            InventorySerial[]
+  reservations       InventoryReservation[]
+  transferItems      InventoryTransferItem[]
+  countItems         InventoryCountItem[]
+  quotationItems     QuotationItem[]
+  salesOrderItems    SalesOrderItem[]
+  saleItems          SaleItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  receiptItems       PurchaseReceiptItem[]
+
+  @@unique([inquilinoId, sku])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, productoId, estado])
+}
+
+model ProductBarcodigo {
+  id          String           @id @default(uuid()) @db.Uuid
+  inquilinoId String           @db.Uuid
+  varianteId  String           @db.Uuid
+  codigo      String
+  tipo        TipoCodigoBarras
+  isPrimary   Boolean          @default(false)
+  creadoEn    DateTime         @default(now())
+  variant     ProductVariant   @relation(fields: [varianteId], references: [id], onDelete: Cascade)
+
+  @@unique([inquilinoId, codigo])
+  @@index([inquilinoId, varianteId])
+}
+
+model ProductImage {
+  id          String     @id @default(uuid()) @db.Uuid
+  inquilinoId String     @db.Uuid
+  productoId  String     @db.Uuid
+  fileId      String     @db.Uuid
+  altText     String?
+  sortOrder   Int        @default(0)
+  creadoEn    DateTime   @default(now())
+  product     Product    @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  file        FileObject @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, productoId, fileId])
+}
+
+model ProductVariantTax {
+  inquilinoId String         @db.Uuid
+  varianteId  String         @db.Uuid
+  taxId       String         @db.Uuid
+  isPrimary   Boolean        @default(false)
+  variant     ProductVariant @relation(fields: [varianteId], references: [id], onDelete: Cascade)
+  tax         Tax            @relation(fields: [taxId], references: [id], onDelete: Restrict)
+
+  @@id([varianteId, taxId])
+  @@index([inquilinoId, taxId])
+}
+
+model ProductBundleItem {
+  id                 String         @id @default(uuid()) @db.Uuid
+  inquilinoId        String         @db.Uuid
+  bundleProductId    String         @db.Uuid
+  componentVariantId String         @db.Uuid
+  cantidad           Decimal        @db.Decimal(18, 6)
+  bundleProduct      Product        @relation("ProductoPaquete", fields: [bundleProductId], references: [id], onDelete: Cascade)
+  componentVariant   ProductVariant @relation("ComponentePaquete", fields: [componentVariantId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, bundleProductId, componentVariantId])
+}
+
+model PriceList {
+  id            String          @id @default(uuid()) @db.Uuid
+  inquilinoId   String          @db.Uuid
+  empresaId     String          @db.Uuid
+  codigo        String
+  nombre        String
+  moneda        String          @db.Char(3)
+  isDefault     Boolean         @default(false)
+  iniciaEn      DateTime?
+  terminaEn     DateTime?
+  estado        EstadoRegistro  @default(ACTIVO)
+  creadoEn      DateTime        @default(now())
+  actualizadoEn DateTime        @updatedAt
+  articulos     PriceListItem[]
+
+  @@unique([inquilinoId, empresaId, codigo])
+  @@index([inquilinoId, empresaId, estado, iniciaEn])
+}
+
+model PriceListItem {
+  id             String         @id @default(uuid()) @db.Uuid
+  inquilinoId    String         @db.Uuid
+  listaPreciosId String         @db.Uuid
+  varianteId     String         @db.Uuid
+  minQuantity    Decimal        @default(1) @db.Decimal(18, 6)
+  monto          Decimal        @db.Decimal(18, 6)
+  iniciaEn       DateTime?
+  terminaEn      DateTime?
+  priceList      PriceList      @relation(fields: [listaPreciosId], references: [id], onDelete: Cascade)
+  variant        ProductVariant @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, listaPreciosId, varianteId, minQuantity])
+  @@index([inquilinoId, varianteId, iniciaEn, terminaEn])
+}
+
+model Customer {
+  id              String                  @id @default(uuid()) @db.Uuid
+  inquilinoId     String                  @db.Uuid
+  codigo          String
+  tipo            TipoCliente
+  documentType    TipoDocumentoIdentidad?
+  documentNumber  String?
+  razonSocial     String
+  nombreComercial String?
+  email           String?
+  phone           String?
+  defaultCurrency String                  @default("PEN") @db.Char(3)
+  estado          EstadoRegistro          @default(ACTIVO)
+  creadoEn        DateTime                @default(now())
+  actualizadoEn   DateTime                @updatedAt
+  addresses       CustomerAddress[]
+  cuentasCredito  CustomerCreditAccount[]
+  ventas          Sale[]
+  quotations      Quotation[]
+  pedidosVenta    SalesOrder[]
+  receivables     AccountsReceivable[]
+  pagos           ReceivablePayment[]
+
+  @@unique([inquilinoId, codigo])
+  @@unique([inquilinoId, documentType, documentNumber])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, razonSocial, estado])
+}
+
+model CustomerAddress {
+  id            String   @id @default(uuid()) @db.Uuid
+  inquilinoId   String   @db.Uuid
+  clienteId     String   @db.Uuid
+  label         String?
+  address       String
+  ubigeo        String?  @db.VarChar(6)
+  department    String?
+  province      String?
+  district      String?
+  isBilling     Boolean  @default(false)
+  isShipping    Boolean  @default(false)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+  customer      Customer @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@index([inquilinoId, clienteId])
+}
+
+model CustomerCreditAccount {
+  id              String              @id @default(uuid()) @db.Uuid
+  inquilinoId     String              @db.Uuid
+  clienteId       String              @db.Uuid
+  moneda          String              @db.Char(3)
+  creditLimit     Decimal             @default(0) @db.Decimal(18, 2)
+  balance         Decimal             @default(0) @db.Decimal(18, 2)
+  paymentTermDays Int                 @default(0)
+  estado          EstadoCuentaCredito @default(ACTIVA)
+  actualizadoEn   DateTime            @updatedAt
+  customer        Customer            @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, clienteId, moneda])
+}
+
+model Supplier {
+  id               String                  @id @default(uuid()) @db.Uuid
+  inquilinoId      String                  @db.Uuid
+  codigo           String
+  documentType     TipoDocumentoIdentidad?
+  documentNumber   String?
+  razonSocial      String
+  nombreComercial  String?
+  contactName      String?
+  email            String?
+  phone            String?
+  address          String?
+  moneda           String                  @default("PEN") @db.Char(3)
+  paymentTermDays  Int                     @default(0)
+  estado           EstadoRegistro          @default(ACTIVO)
+  creadoEn         DateTime                @default(now())
+  actualizadoEn    DateTime                @updatedAt
+  pedidosCompra    PurchaseOrder[]
+  purchaseReceipts PurchaseReceipt[]
+  payables         AccountsPayable[]
+  pagos            PurchasePayment[]
+
+  @@unique([inquilinoId, codigo])
+  @@unique([inquilinoId, documentType, documentNumber])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, razonSocial, estado])
+}
+
+model StockBalance {
+  id            String         @id @default(uuid()) @db.Uuid
+  inquilinoId   String         @db.Uuid
+  almacenId     String         @db.Uuid
+  varianteId    String         @db.Uuid
+  /// Transactional projection only; InventoryLedgerEntry is authoritative.
+  enStock       Decimal        @default(0) @db.Decimal(18, 6)
+  reserved      Decimal        @default(0) @db.Decimal(18, 6)
+  enTransito    Decimal        @default(0) @db.Decimal(18, 6)
+  available     Decimal        @default(0) @db.Decimal(18, 6)
+  costoPromedio Decimal        @default(0) @db.Decimal(18, 6)
+  version       Int            @default(0)
+  actualizadoEn DateTime       @updatedAt
+  warehouse     Warehouse      @relation(fields: [almacenId], references: [id], onDelete: Restrict)
+  variant       ProductVariant @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, almacenId, varianteId])
+  @@index([inquilinoId, almacenId, varianteId])
+}
+
+model InventoryLedgerEntry {
+  /// Immutable inventory posting ledger. Application transactions maintain StockBalance projections.
+  id             String                   @id @default(uuid()) @db.Uuid
+  inquilinoId    String                   @db.Uuid
+  almacenId      String                   @db.Uuid
+  varianteId     String                   @db.Uuid
+  loteId         String?                  @db.Uuid
+  serieId        String?                  @db.Uuid
+  movementType   TipoMovimientoInventario
+  cantidad       Decimal                  @db.Decimal(18, 6)
+  costoUnitario  Decimal?                 @db.Decimal(18, 6)
+  totalCost      Decimal?                 @db.Decimal(18, 6)
+  referenciaType String
+  referenciaId   String                   @db.Uuid
+  correlationId  String?                  @db.Uuid
+  idempotencyKey String
+  occurredAt     DateTime
+  creadoEn       DateTime                 @default(now())
+  warehouse      Warehouse                @relation(fields: [inquilinoId, almacenId], references: [inquilinoId, id], onDelete: Restrict)
+  variant        ProductVariant           @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+  lot            InventoryLot?            @relation(fields: [inquilinoId, loteId], references: [inquilinoId, id], onDelete: Restrict)
+  serial         InventorySerial?         @relation(fields: [inquilinoId, serieId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@index([inquilinoId, almacenId, varianteId, occurredAt])
+  @@index([inquilinoId, referenciaType, referenciaId])
+  @@index([inquilinoId, correlationId])
+  @@index([inquilinoId, loteId])
+  @@index([inquilinoId, serieId])
+}
+
+model InventoryLot {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  inquilinoId        String                 @db.Uuid
+  almacenId          String                 @db.Uuid
+  varianteId         String                 @db.Uuid
+  lotNumber          String
+  manufacturedAt     DateTime?
+  venceEn            DateTime?
+  cantidad           Decimal                @default(0) @db.Decimal(18, 6)
+  creadoEn           DateTime               @default(now())
+  actualizadoEn      DateTime               @updatedAt
+  warehouse          Warehouse              @relation(fields: [inquilinoId, almacenId], references: [inquilinoId, id], onDelete: Restrict)
+  variant            ProductVariant         @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+  asientosInventario InventoryLedgerEntry[]
+
+  @@unique([inquilinoId, almacenId, varianteId, lotNumber])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, almacenId, varianteId, venceEn])
+}
+
+model InventorySerial {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  inquilinoId        String                 @db.Uuid
+  almacenId          String                 @db.Uuid
+  varianteId         String                 @db.Uuid
+  serialNumber       String
+  estado             EstadoSerieInventario  @default(DISPONIBLE)
+  acquiredAt         DateTime?
+  soldAt             DateTime?
+  creadoEn           DateTime               @default(now())
+  actualizadoEn      DateTime               @updatedAt
+  warehouse          Warehouse              @relation(fields: [almacenId], references: [id], onDelete: Restrict)
+  variant            ProductVariant         @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+  asientosInventario InventoryLedgerEntry[]
+
+  @@unique([inquilinoId, serialNumber])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, almacenId, varianteId, estado])
+}
+
+model InventoryReservation {
+  id               String                  @id @default(uuid()) @db.Uuid
+  inquilinoId      String                  @db.Uuid
+  almacenId        String                  @db.Uuid
+  varianteId       String                  @db.Uuid
+  cantidad         Decimal                 @db.Decimal(18, 6)
+  cantidadAtendida Decimal                 @default(0) @db.Decimal(18, 6)
+  estado           EstadoReservaInventario @default(ACTIVA)
+  referenciaType   String
+  referenciaId     String                  @db.Uuid
+  venceEn          DateTime?
+  creadoEn         DateTime                @default(now())
+  actualizadoEn    DateTime                @updatedAt
+  warehouse        Warehouse               @relation(fields: [inquilinoId, almacenId], references: [inquilinoId, id], onDelete: Restrict)
+  variant          ProductVariant          @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@index([inquilinoId, almacenId, varianteId, estado])
+  @@index([inquilinoId, referenciaType, referenciaId])
+}
+
+model InventoryTransfer {
+  id                   String                        @id @default(uuid()) @db.Uuid
+  inquilinoId          String                        @db.Uuid
+  number               String
+  almacenOrigenId      String                        @db.Uuid
+  almacenDestinoId     String                        @db.Uuid
+  estado               EstadoTransferenciaInventario @default(BORRADOR)
+  solicitadoPorId      String?                       @db.Uuid
+  aprobadoPorId        String?                       @db.Uuid
+  shippedAt            DateTime?
+  recibidoEn           DateTime?
+  notes                String?
+  creadoEn             DateTime                      @default(now())
+  actualizadoEn        DateTime                      @updatedAt
+  originWarehouse      Warehouse                     @relation("OrigenTransferencia", fields: [almacenOrigenId], references: [id], onDelete: Restrict)
+  destinationWarehouse Warehouse                     @relation("DestinoTransferencia", fields: [almacenDestinoId], references: [id], onDelete: Restrict)
+  articulos            InventoryTransferItem[]
+
+  @@unique([inquilinoId, number])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, almacenOrigenId, estado, creadoEn])
+  @@index([inquilinoId, almacenDestinoId, estado, creadoEn])
+}
+
+model InventoryTransferItem {
+  id           String            @id @default(uuid()) @db.Uuid
+  inquilinoId  String            @db.Uuid
+  transferId   String            @db.Uuid
+  varianteId   String            @db.Uuid
+  requestedQty Decimal           @db.Decimal(18, 6)
+  shippedQty   Decimal           @default(0) @db.Decimal(18, 6)
+  receivedQty  Decimal           @default(0) @db.Decimal(18, 6)
+  transfer     InventoryTransfer @relation(fields: [inquilinoId, transferId], references: [inquilinoId, id], onDelete: Restrict)
+  variant      ProductVariant    @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@unique([inquilinoId, transferId, varianteId])
+  @@index([inquilinoId, varianteId])
+}
+
+model InventoryCount {
+  id            String                 @id @default(uuid()) @db.Uuid
+  inquilinoId   String                 @db.Uuid
+  almacenId     String                 @db.Uuid
+  number        String
+  estado        EstadoConteoInventario @default(BORRADOR)
+  contadoPorId  String?                @db.Uuid
+  aprobadoPorId String?                @db.Uuid
+  iniciadoEn    DateTime?
+  completadoEn  DateTime?
+  postedAt      DateTime?
+  creadoEn      DateTime               @default(now())
+  actualizadoEn DateTime               @updatedAt
+  warehouse     Warehouse              @relation(fields: [almacenId], references: [id], onDelete: Restrict)
+  articulos     InventoryCountItem[]
+
+  @@unique([inquilinoId, number])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, almacenId, estado, creadoEn])
+}
+
+model InventoryCountItem {
+  id                 String         @id @default(uuid()) @db.Uuid
+  inquilinoId        String         @db.Uuid
+  countId            String         @db.Uuid
+  varianteId         String         @db.Uuid
+  loteId             String?        @db.Uuid
+  cantidadEsperada   Decimal        @db.Decimal(18, 6)
+  cantidadContada    Decimal?       @db.Decimal(18, 6)
+  cantidadDiferencia Decimal?       @db.Decimal(18, 6)
+  motivo             String?
+  count              InventoryCount @relation(fields: [inquilinoId, countId], references: [inquilinoId, id], onDelete: Restrict)
+  variant            ProductVariant @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@index([inquilinoId, countId, varianteId])
+}
+
+model Quotation {
+  id               String                   @id @default(uuid()) @db.Uuid
+  inquilinoId      String                   @db.Uuid
+  sucursalId       String                   @db.Uuid
+  clienteId        String?                  @db.Uuid
+  number           String
+  estado           EstadoDocumentoComercial @default(BORRADOR)
+  moneda           String                   @db.Char(3)
+  exchangeRate     Decimal                  @default(1) @db.Decimal(18, 6)
+  subtotal         Decimal                  @default(0) @db.Decimal(18, 2)
+  totalDescuento   Decimal                  @default(0) @db.Decimal(18, 2)
+  totalImpuesto    Decimal                  @default(0) @db.Decimal(18, 2)
+  total            Decimal                  @default(0) @db.Decimal(18, 2)
+  vigenteHasta     DateTime?
+  customerSnapshot Json?
+  creadoEn         DateTime                 @default(now())
+  actualizadoEn    DateTime                 @updatedAt
+  branch           Branch                   @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  customer         Customer?                @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  articulos        QuotationItem[]
+  pedidosVenta     SalesOrder[]
+  ventas           Sale[]
+
+  @@unique([inquilinoId, sucursalId, number])
+  @@index([inquilinoId, sucursalId, estado, creadoEn])
+}
+
+model QuotationItem {
+  id             String          @id @default(uuid()) @db.Uuid
+  inquilinoId    String          @db.Uuid
+  cotizacionId   String          @db.Uuid
+  varianteId     String?         @db.Uuid
+  descripcion    String
+  skuSnapshot    String?
+  cantidad       Decimal         @db.Decimal(18, 6)
+  precioUnitario Decimal         @db.Decimal(18, 6)
+  discountAmount Decimal         @default(0) @db.Decimal(18, 2)
+  montoImpuesto  Decimal         @default(0) @db.Decimal(18, 2)
+  total          Decimal         @db.Decimal(18, 2)
+  quotation      Quotation       @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  variant        ProductVariant? @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@index([inquilinoId, cotizacionId])
+  @@index([inquilinoId, varianteId])
+}
+
+model SalesOrder {
+  id               String                   @id @default(uuid()) @db.Uuid
+  inquilinoId      String                   @db.Uuid
+  sucursalId       String                   @db.Uuid
+  clienteId        String?                  @db.Uuid
+  cotizacionId     String?                  @db.Uuid
+  number           String
+  estado           EstadoDocumentoComercial @default(BORRADOR)
+  moneda           String                   @db.Char(3)
+  subtotal         Decimal                  @default(0) @db.Decimal(18, 2)
+  totalDescuento   Decimal                  @default(0) @db.Decimal(18, 2)
+  totalImpuesto    Decimal                  @default(0) @db.Decimal(18, 2)
+  total            Decimal                  @default(0) @db.Decimal(18, 2)
+  promisedAt       DateTime?
+  customerSnapshot Json?
+  creadoEn         DateTime                 @default(now())
+  actualizadoEn    DateTime                 @updatedAt
+  branch           Branch                   @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  customer         Customer?                @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  quotation        Quotation?               @relation(fields: [cotizacionId], references: [id], onDelete: Restrict)
+  articulos        SalesOrderItem[]
+  ventas           Sale[]
+
+  @@unique([inquilinoId, sucursalId, number])
+  @@index([inquilinoId, sucursalId, estado, creadoEn])
+}
+
+model SalesOrderItem {
+  id               String          @id @default(uuid()) @db.Uuid
+  inquilinoId      String          @db.Uuid
+  pedidoVentaId    String          @db.Uuid
+  varianteId       String?         @db.Uuid
+  descripcion      String
+  skuSnapshot      String?
+  cantidad         Decimal         @db.Decimal(18, 6)
+  cantidadAtendida Decimal         @default(0) @db.Decimal(18, 6)
+  precioUnitario   Decimal         @db.Decimal(18, 6)
+  discountAmount   Decimal         @default(0) @db.Decimal(18, 2)
+  montoImpuesto    Decimal         @default(0) @db.Decimal(18, 2)
+  total            Decimal         @db.Decimal(18, 2)
+  salesOrder       SalesOrder      @relation(fields: [pedidoVentaId], references: [id], onDelete: Cascade)
+  variant          ProductVariant? @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@index([inquilinoId, pedidoVentaId])
+  @@index([inquilinoId, varianteId])
+}
+
+model Sale {
+  id                     String               @id @default(uuid()) @db.Uuid
+  inquilinoId            String               @db.Uuid
+  empresaId              String               @db.Uuid
+  sucursalId             String               @db.Uuid
+  terminalId             String?              @db.Uuid
+  sesionCajaId           String?              @db.Uuid
+  clienteId              String?              @db.Uuid
+  cotizacionId           String?              @db.Uuid
+  pedidoVentaId          String?              @db.Uuid
+  cashierMembershipId    String               @db.Uuid
+  number                 String
+  idempotencyKey         String
+  offlineId              String?
+  offlineDeviceId        String?
+  offlineCreatedAt       DateTime?
+  sincronizadoEn         DateTime?
+  estado                 EstadoVenta          @default(BORRADOR)
+  moneda                 String               @db.Char(3)
+  exchangeRate           Decimal              @default(1) @db.Decimal(18, 6)
+  subtotal               Decimal              @default(0) @db.Decimal(18, 2)
+  totalDescuento         Decimal              @default(0) @db.Decimal(18, 2)
+  totalImpuesto          Decimal              @default(0) @db.Decimal(18, 2)
+  total                  Decimal              @default(0) @db.Decimal(18, 2)
+  totalPagado            Decimal              @default(0) @db.Decimal(18, 2)
+  totalVuelto            Decimal              @default(0) @db.Decimal(18, 2)
+  customerSnapshot       Json?
+  billingAddressSnapshot Json?
+  completadoEn           DateTime?
+  voidedAt               DateTime?
+  voidReason             String?
+  creadoEn               DateTime             @default(now())
+  actualizadoEn          DateTime             @updatedAt
+  company                Company              @relation(fields: [inquilinoId, empresaId], references: [inquilinoId, id], onDelete: Restrict)
+  branch                 Branch               @relation(fields: [inquilinoId, empresaId, sucursalId], references: [inquilinoId, empresaId, id], onDelete: Restrict)
+  terminal               Terminal?            @relation(fields: [inquilinoId, sucursalId, terminalId], references: [inquilinoId, sucursalId, id], onDelete: Restrict)
+  cashSession            CashSession?         @relation(fields: [inquilinoId, sucursalId, sesionCajaId], references: [inquilinoId, sucursalId, id], onDelete: Restrict)
+  customer               Customer?            @relation(fields: [inquilinoId, clienteId], references: [inquilinoId, id], onDelete: Restrict)
+  cashierMembership      Membership           @relation(fields: [inquilinoId, cashierMembershipId], references: [inquilinoId, id], onDelete: Restrict)
+  quotation              Quotation?           @relation(fields: [cotizacionId], references: [id], onDelete: Restrict)
+  salesOrder             SalesOrder?          @relation(fields: [pedidoVentaId], references: [id], onDelete: Restrict)
+  articulos              SaleItem[]
+  discounts              SaleDiscount[]
+  taxes                  SaleTax[]
+  pagos                  SalePayment[]
+  refunds                SaleRefund[]
+  referencias            SaleReference[]      @relation("ReferenciaVentaOrigen")
+  referenciadBy          SaleReference[]      @relation("ReferenciaVentaDestino")
+  electronicDocuments    ElectronicDocument[]
+  receivable             AccountsReceivable?
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@unique([inquilinoId, sucursalId, number])
+  @@unique([inquilinoId, offlineDeviceId, offlineId])
+  @@unique([inquilinoId, id])
+  @@unique([inquilinoId, clienteId, id])
+  @@index([inquilinoId, sucursalId, estado, creadoEn])
+  @@index([inquilinoId, clienteId, creadoEn])
+  @@index([inquilinoId, empresaId, creadoEn])
+  @@index([inquilinoId, terminalId])
+  @@index([inquilinoId, sesionCajaId])
+  @@index([inquilinoId, cashierMembershipId])
+}
+
+model SaleItem {
+  id                 String             @id @default(uuid()) @db.Uuid
+  inquilinoId        String             @db.Uuid
+  ventaId            String             @db.Uuid
+  varianteId         String?            @db.Uuid
+  lineNumber         Int
+  skuSnapshot        String?
+  nombreSnapshot     String
+  unitCodeSnapshot   String?
+  AfectacionImpuesto AfectacionImpuesto
+  cantidad           Decimal            @db.Decimal(18, 6)
+  precioUnitario     Decimal            @db.Decimal(18, 6)
+  valorUnitario      Decimal            @db.Decimal(18, 6)
+  montoBruto         Decimal            @db.Decimal(18, 2)
+  discountAmount     Decimal            @default(0) @db.Decimal(18, 2)
+  montoImpuesto      Decimal            @default(0) @db.Decimal(18, 2)
+  total              Decimal            @db.Decimal(18, 2)
+  metadata           Json?
+  sale               Sale               @relation(fields: [inquilinoId, ventaId], references: [inquilinoId, id], onDelete: Restrict)
+  variant            ProductVariant?    @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+  discounts          SaleItemDiscount[]
+  taxes              SaleItemTax[]
+  refundItems        SaleRefundItem[]
+
+  @@unique([inquilinoId, ventaId, lineNumber])
+  @@unique([inquilinoId, ventaId, id])
+  @@index([inquilinoId, varianteId])
+}
+
+model SaleDiscount {
+  id             String   @id @default(uuid()) @db.Uuid
+  inquilinoId    String   @db.Uuid
+  ventaId        String   @db.Uuid
+  codigo         String?
+  descripcion    String
+  rate           Decimal? @db.Decimal(9, 6)
+  monto          Decimal  @db.Decimal(18, 2)
+  authorizedById String?  @db.Uuid
+  sale           Sale     @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, ventaId])
+}
+
+model SaleItemDiscount {
+  id          String   @id @default(uuid()) @db.Uuid
+  inquilinoId String   @db.Uuid
+  itemVentaId String   @db.Uuid
+  codigo      String?
+  descripcion String
+  rate        Decimal? @db.Decimal(9, 6)
+  monto       Decimal  @db.Decimal(18, 2)
+  saleItem    SaleItem @relation(fields: [itemVentaId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, itemVentaId])
+}
+
+model SaleTax {
+  id          String  @id @default(uuid()) @db.Uuid
+  inquilinoId String  @db.Uuid
+  ventaId     String  @db.Uuid
+  taxCode     String
+  taxName     String
+  taxableBase Decimal @db.Decimal(18, 2)
+  rate        Decimal @db.Decimal(9, 6)
+  monto       Decimal @db.Decimal(18, 2)
+  sale        Sale    @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, ventaId])
+}
+
+model SaleItemTax {
+  id          String   @id @default(uuid()) @db.Uuid
+  inquilinoId String   @db.Uuid
+  itemVentaId String   @db.Uuid
+  taxCode     String
+  taxableBase Decimal  @db.Decimal(18, 2)
+  rate        Decimal  @db.Decimal(9, 6)
+  monto       Decimal  @db.Decimal(18, 2)
+  saleItem    SaleItem @relation(fields: [itemVentaId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, itemVentaId])
+}
+
+model SalePayment {
+  id                 String              @id @default(uuid()) @db.Uuid
+  inquilinoId        String              @db.Uuid
+  ventaId            String              @db.Uuid
+  transaccionPagoId  String?             @db.Uuid
+  idempotencyKey     String
+  method             MetodoPago
+  monto              Decimal             @db.Decimal(18, 2)
+  moneda             String              @db.Char(3)
+  referencia         String?
+  pagadoEn           DateTime            @default(now())
+  sale               Sale                @relation(fields: [inquilinoId, ventaId], references: [inquilinoId, id], onDelete: Restrict)
+  paymentTransaction PaymentTransaction? @relation(fields: [transaccionPagoId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@index([inquilinoId, ventaId, pagadoEn])
+  @@index([inquilinoId, transaccionPagoId])
+}
+
+model SaleRefund {
+  id              String                @id @default(uuid()) @db.Uuid
+  inquilinoId     String                @db.Uuid
+  ventaId         String                @db.Uuid
+  number          String
+  idempotencyKey  String
+  estado          EstadoDevolucionVenta @default(BORRADOR)
+  motivo          String
+  subtotal        Decimal               @default(0) @db.Decimal(18, 2)
+  totalImpuesto   Decimal               @default(0) @db.Decimal(18, 2)
+  total           Decimal               @default(0) @db.Decimal(18, 2)
+  solicitadoPorId String                @db.Uuid
+  aprobadoPorId   String?               @db.Uuid
+  completadoEn    DateTime?
+  creadoEn        DateTime              @default(now())
+  actualizadoEn   DateTime              @updatedAt
+  sale            Sale                  @relation(fields: [inquilinoId, ventaId], references: [inquilinoId, id], onDelete: Restrict)
+  articulos       SaleRefundItem[]
+  paymentRefunds  PaymentRefund[]
+
+  @@unique([inquilinoId, number])
+  @@unique([inquilinoId, idempotencyKey])
+  @@unique([inquilinoId, ventaId, id])
+  @@index([inquilinoId, ventaId, estado, creadoEn])
+}
+
+model SaleRefundItem {
+  id                String     @id @default(uuid()) @db.Uuid
+  inquilinoId       String     @db.Uuid
+  devolucionVentaId String     @db.Uuid
+  ventaId           String     @db.Uuid
+  itemVentaId       String     @db.Uuid
+  cantidad          Decimal    @db.Decimal(18, 6)
+  unitAmount        Decimal    @db.Decimal(18, 6)
+  montoImpuesto     Decimal    @default(0) @db.Decimal(18, 2)
+  total             Decimal    @db.Decimal(18, 2)
+  restock           Boolean    @default(true)
+  saleRefund        SaleRefund @relation(fields: [inquilinoId, ventaId, devolucionVentaId], references: [inquilinoId, ventaId, id], onDelete: Restrict)
+  saleItem          SaleItem   @relation(fields: [inquilinoId, ventaId, itemVentaId], references: [inquilinoId, ventaId, id], onDelete: Restrict)
+
+  @@index([inquilinoId, devolucionVentaId])
+  @@index([inquilinoId, ventaId, itemVentaId])
+}
+
+model SaleReference {
+  id             String   @id @default(uuid()) @db.Uuid
+  inquilinoId    String   @db.Uuid
+  sourceSaleId   String   @db.Uuid
+  targetSaleId   String   @db.Uuid
+  referenciaType String
+  motivo         String?
+  creadoEn       DateTime @default(now())
+  sourceSale     Sale     @relation("ReferenciaVentaOrigen", fields: [sourceSaleId], references: [id], onDelete: Restrict)
+  targetSale     Sale     @relation("ReferenciaVentaDestino", fields: [targetSaleId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, sourceSaleId, targetSaleId, referenciaType])
+}
+
+model CashSession {
+  id               String              @id @default(uuid()) @db.Uuid
+  inquilinoId      String              @db.Uuid
+  sucursalId       String              @db.Uuid
+  cajaId           String              @db.Uuid
+  terminalId       String?             @db.Uuid
+  abiertoPorId     String              @db.Uuid
+  cerradoPorId     String?             @db.Uuid
+  estado           EstadoSesionCaja    @default(ABIERTA)
+  openingAmount    Decimal             @db.Decimal(18, 2)
+  expectedAmount   Decimal?            @db.Decimal(18, 2)
+  declaredAmount   Decimal?            @db.Decimal(18, 2)
+  differenceAmount Decimal?            @db.Decimal(18, 2)
+  abiertoEn        DateTime            @default(now())
+  cerradoEn        DateTime?
+  creadoEn         DateTime            @default(now())
+  actualizadoEn    DateTime            @updatedAt
+  cashRegister     CashRegister        @relation(fields: [cajaId], references: [id], onDelete: Restrict)
+  branch           Branch              @relation(fields: [inquilinoId, sucursalId], references: [inquilinoId, id], onDelete: Restrict)
+  terminal         Terminal?           @relation(fields: [terminalId], references: [id], onDelete: Restrict)
+  ventas           Sale[]
+  movements        CashMovement[]
+  counts           CashCount[]
+  reconciliation   CashReconciliation?
+
+  @@unique([inquilinoId, sucursalId, id])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, sucursalId, estado, abiertoEn])
+  @@index([inquilinoId, cajaId, estado])
+}
+
+model CashMovement {
+  id             String             @id @default(uuid()) @db.Uuid
+  inquilinoId    String             @db.Uuid
+  sesionCajaId   String             @db.Uuid
+  idempotencyKey String
+  tipo           TipoMovimientoCaja
+  monto          Decimal            @db.Decimal(18, 2)
+  moneda         String             @db.Char(3)
+  motivo         String?
+  referenciaType String?
+  referenciaId   String?
+  actorId        String             @db.Uuid
+  occurredAt     DateTime           @default(now())
+  creadoEn       DateTime           @default(now())
+  cashSession    CashSession        @relation(fields: [inquilinoId, sesionCajaId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@index([inquilinoId, sesionCajaId, occurredAt])
+}
+
+model CashCount {
+  id           String      @id @default(uuid()) @db.Uuid
+  inquilinoId  String      @db.Uuid
+  sesionCajaId String      @db.Uuid
+  denomination Decimal     @db.Decimal(18, 2)
+  cantidad     Int
+  total        Decimal     @db.Decimal(18, 2)
+  countedAt    DateTime    @default(now())
+  contadoPorId String      @db.Uuid
+  cashSession  CashSession @relation(fields: [sesionCajaId], references: [id], onDelete: Cascade)
+
+  @@index([inquilinoId, sesionCajaId])
+}
+
+model CashReconciliation {
+  id               String      @id @default(uuid()) @db.Uuid
+  inquilinoId      String      @db.Uuid
+  sesionCajaId     String      @unique @db.Uuid
+  expectedAmount   Decimal     @db.Decimal(18, 2)
+  declaredAmount   Decimal     @db.Decimal(18, 2)
+  differenceAmount Decimal     @db.Decimal(18, 2)
+  motivo           String?
+  reconciledById   String      @db.Uuid
+  aprobadoPorId    String?     @db.Uuid
+  conciliadoEn     DateTime    @default(now())
+  cashSession      CashSession @relation(fields: [sesionCajaId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, conciliadoEn])
+}
+
+model PaymentProviderAccount {
+  id                       String                @id @default(uuid()) @db.Uuid
+  inquilinoId              String                @db.Uuid
+  empresaId                String                @db.Uuid
+  proveedor                String
+  referenciaComerciante    String
+  referenciaSecretaCifrada String?
+  settings                 Json?
+  estado                   EstadoRegistro        @default(ACTIVO)
+  creadoEn                 DateTime              @default(now())
+  actualizadoEn            DateTime              @updatedAt
+  company                  Company               @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  intents                  PaymentIntent[]
+  webhooks                 PaymentWebhookEvent[]
+  settlements              PaymentSettlement[]
+
+  @@unique([inquilinoId, proveedor, referenciaComerciante])
+  @@index([inquilinoId, empresaId, estado])
+}
+
+model PaymentIntent {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  inquilinoId        String                  @db.Uuid
+  cuentaProveedorId  String?                 @db.Uuid
+  idempotencyKey     String
+  intentoProveedorId String?
+  estado             EstadoIntentoPago       @default(CREADO)
+  monto              Decimal                 @db.Decimal(18, 2)
+  moneda             String                  @db.Char(3)
+  method             MetodoPago
+  descripcion        String?
+  venceEn            DateTime?
+  metadata           Json?
+  creadoEn           DateTime                @default(now())
+  actualizadoEn      DateTime                @updatedAt
+  proveedorAccount   PaymentProviderAccount? @relation(fields: [cuentaProveedorId], references: [id], onDelete: Restrict)
+  transactions       PaymentTransaction[]
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@unique([inquilinoId, cuentaProveedorId, intentoProveedorId])
+  @@index([inquilinoId, estado, creadoEn])
+}
+
+model PaymentTransaction {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  inquilinoId            String                  @db.Uuid
+  intentoPagoId          String                  @db.Uuid
+  idempotencyKey         String
+  transaccionProveedorId String?
+  estado                 EstadoTransaccionPago   @default(PENDIENTE)
+  monto                  Decimal                 @db.Decimal(18, 2)
+  moneda                 String                  @db.Char(3)
+  codigoAutorizacion     String?
+  referenciaProveedor    String?
+  codigoError            String?
+  mensajeError           String?
+  procesadoEn            DateTime?
+  creadoEn               DateTime                @default(now())
+  actualizadoEn          DateTime                @updatedAt
+  paymentIntent          PaymentIntent           @relation(fields: [intentoPagoId], references: [id], onDelete: Restrict)
+  salePayments           SalePayment[]
+  refunds                PaymentRefund[]
+  settlementItems        PaymentSettlementItem[]
+
+  @@unique([inquilinoId, transaccionProveedorId])
+  @@unique([inquilinoId, idempotencyKey])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, estado, creadoEn])
+}
+
+model PaymentRefund {
+  id                    String               @id @default(uuid()) @db.Uuid
+  inquilinoId           String               @db.Uuid
+  transaccionPagoId     String               @db.Uuid
+  devolucionVentaId     String?              @db.Uuid
+  idempotencyKey        String
+  devolucionProveedorId String?
+  estado                EstadoDevolucionPago @default(PENDIENTE)
+  monto                 Decimal              @db.Decimal(18, 2)
+  moneda                String               @db.Char(3)
+  motivo                String?
+  procesadoEn           DateTime?
+  creadoEn              DateTime             @default(now())
+  actualizadoEn         DateTime             @updatedAt
+  paymentTransaction    PaymentTransaction   @relation(fields: [transaccionPagoId], references: [id], onDelete: Restrict)
+  saleRefund            SaleRefund?          @relation(fields: [devolucionVentaId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@unique([inquilinoId, devolucionProveedorId])
+  @@index([inquilinoId, estado, creadoEn])
+}
+
+model PaymentWebhookEvent {
+  id                String                 @id @default(uuid()) @db.Uuid
+  inquilinoId       String                 @db.Uuid
+  cuentaProveedorId String                 @db.Uuid
+  eventoProveedorId String
+  eventType         String
+  signature         String?
+  cuerpoCrudo       Bytes
+  encabezados       Json?
+  recibidoEn        DateTime               @default(now())
+  procesadoEn       DateTime?
+  processingError   String?
+  proveedorAccount  PaymentProviderAccount @relation(fields: [cuentaProveedorId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, cuentaProveedorId, eventoProveedorId])
+  @@index([inquilinoId, procesadoEn, recibidoEn])
+}
+
+model PaymentSettlement {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  inquilinoId         String                  @db.Uuid
+  cuentaProveedorId   String                  @db.Uuid
+  referenciaProveedor String
+  estado              EstadoLiquidacion       @default(PENDIENTE)
+  moneda              String                  @db.Char(3)
+  montoBruto          Decimal                 @db.Decimal(18, 2)
+  feeAmount           Decimal                 @default(0) @db.Decimal(18, 2)
+  montoNeto           Decimal                 @db.Decimal(18, 2)
+  settledAt           DateTime?
+  creadoEn            DateTime                @default(now())
+  actualizadoEn       DateTime                @updatedAt
+  proveedorAccount    PaymentProviderAccount  @relation(fields: [cuentaProveedorId], references: [id], onDelete: Restrict)
+  articulos           PaymentSettlementItem[]
+
+  @@unique([inquilinoId, cuentaProveedorId, referenciaProveedor])
+  @@index([inquilinoId, estado, creadoEn])
+}
+
+model PaymentSettlementItem {
+  id                 String             @id @default(uuid()) @db.Uuid
+  inquilinoId        String             @db.Uuid
+  settlementId       String             @db.Uuid
+  transaccionPagoId  String             @db.Uuid
+  montoBruto         Decimal            @db.Decimal(18, 2)
+  feeAmount          Decimal            @default(0) @db.Decimal(18, 2)
+  montoNeto          Decimal            @db.Decimal(18, 2)
+  settlement         PaymentSettlement  @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  paymentTransaction PaymentTransaction @relation(fields: [transaccionPagoId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, settlementId, transaccionPagoId])
+}
+
+model DocumentSeries {
+  id            String                   @id @default(uuid()) @db.Uuid
+  inquilinoId   String                   @db.Uuid
+  empresaId     String                   @db.Uuid
+  sucursalId    String?                  @db.Uuid
+  documentType  TipoDocumentoElectronico
+  series        String
+  nextNumber    BigInt                   @default(1)
+  estado        EstadoRegistro           @default(ACTIVO)
+  creadoEn      DateTime                 @default(now())
+  actualizadoEn DateTime                 @updatedAt
+  company       Company                  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  documentos    ElectronicDocument[]
+
+  @@unique([inquilinoId, empresaId, documentType, series])
+  @@index([inquilinoId, empresaId, estado])
+}
+
+model SunatCertificate {
+  id                       String         @id @default(uuid()) @db.Uuid
+  inquilinoId              String         @db.Uuid
+  empresaId                String         @db.Uuid
+  certificateFileId        String?        @db.Uuid
+  referenciaSecretaCifrada String
+  serialNumber             String?
+  subject                  String?
+  issuer                   String?
+  fingerprintSha256        String?
+  vigenteDesde             DateTime
+  vigenteHasta             DateTime
+  estado                   EstadoRegistro @default(ACTIVO)
+  creadoEn                 DateTime       @default(now())
+  actualizadoEn            DateTime       @updatedAt
+  company                  Company        @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  certificateFile          FileObject?    @relation(fields: [certificateFileId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, empresaId, estado, vigenteHasta])
+}
+
+model ElectronicDocument {
+  id                     String                                @id @default(uuid()) @db.Uuid
+  inquilinoId            String                                @db.Uuid
+  empresaId              String                                @db.Uuid
+  sucursalId             String                                @db.Uuid
+  ventaId                String?                               @db.Uuid
+  seriesId               String                                @db.Uuid
+  documentType           TipoDocumentoElectronico
+  series                 String
+  number                 BigInt
+  estado                 EstadoDocumentoElectronico            @default(BORRADOR)
+  customerDocumentType   TipoDocumentoIdentidad?
+  customerDocumentNumber String?
+  customerName           String?
+  /// Issuer and customer snapshots are fiscal evidence. Application must reject updates after signing.
+  issuerSnapshot         Json
+  customerSnapshot       Json
+  moneda                 String                                @db.Char(3)
+  subtotal               Decimal                               @db.Decimal(18, 2)
+  taxableTotal           Decimal                               @default(0) @db.Decimal(18, 2)
+  exemptTotal            Decimal                               @default(0) @db.Decimal(18, 2)
+  unaffectedTotal        Decimal                               @default(0) @db.Decimal(18, 2)
+  freeTotal              Decimal                               @default(0) @db.Decimal(18, 2)
+  totalDescuento         Decimal                               @default(0) @db.Decimal(18, 2)
+  chargeTotal            Decimal                               @default(0) @db.Decimal(18, 2)
+  totalImpuesto          Decimal                               @db.Decimal(18, 2)
+  total                  Decimal                               @db.Decimal(18, 2)
+  issueDate              DateTime
+  dueDate                DateTime?
+  paymentTerms           TerminosPagoFiscal                    @default(CONTADO)
+  noteReasonCode         String?
+  noteReasonText         String?
+  relatedDocumentType    TipoDocumentoElectronico?
+  relatedSeries          String?
+  relatedNumber          BigInt?
+  sunatTicket            String?
+  sunatResponseCode      String?
+  sunatDescription       String?
+  xmlFileId              String?                               @db.Uuid
+  cdrFileId              String?                               @db.Uuid
+  pdfFileId              String?                               @db.Uuid
+  enviadoEn              DateTime?
+  aceptadoEn             DateTime?
+  creadoEn               DateTime                              @default(now())
+  actualizadoEn          DateTime                              @updatedAt
+  sale                   Sale?                                 @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  seriesRecord           DocumentSeries                        @relation(fields: [seriesId], references: [id], onDelete: Restrict)
+  xmlFile                FileObject?                           @relation("DocumentoElectronicoXml", fields: [xmlFileId], references: [id], onDelete: Restrict)
+  cdrFile                FileObject?                           @relation("DocumentoElectronicoCdr", fields: [cdrFileId], references: [id], onDelete: Restrict)
+  pdfFile                FileObject?                           @relation("DocumentoElectronicoPdf", fields: [pdfFileId], references: [id], onDelete: Restrict)
+  articulos              ElectronicDocumentItem[]
+  eventos                ElectronicDocumentEvent[]
+  leyendas               ElectronicDocumentLegend[]
+  creditInstallments     ElectronicDocumentCreditInstallment[]
+
+  @@unique([inquilinoId, empresaId, documentType, series, number])
+  @@index([inquilinoId, sucursalId, estado, issueDate])
+  @@index([inquilinoId, ventaId])
+}
+
+model ElectronicDocumentItem {
+  id                     String             @id @default(uuid()) @db.Uuid
+  inquilinoId            String             @db.Uuid
+  documentoElectronicoId String             @db.Uuid
+  lineNumber             Int
+  varianteId             String?            @db.Uuid
+  sku                    String?
+  descripcion            String
+  sunatUnitCode          String
+  affectation            AfectacionImpuesto
+  taxSchemeId            String
+  taxSchemeName          String
+  taxCategoryCode        String
+  priceTypeCode          String
+  taxPercent             Decimal            @db.Decimal(7, 4)
+  cantidad               Decimal            @db.Decimal(18, 6)
+  valorUnitario          Decimal            @db.Decimal(18, 6)
+  precioUnitario         Decimal            @db.Decimal(18, 6)
+  discountAmount         Decimal            @default(0) @db.Decimal(18, 2)
+  taxableBase            Decimal            @db.Decimal(18, 2)
+  montoImpuesto          Decimal            @db.Decimal(18, 2)
+  total                  Decimal            @db.Decimal(18, 2)
+  electronicDocument     ElectronicDocument @relation(fields: [documentoElectronicoId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, documentoElectronicoId, lineNumber])
+  @@index([inquilinoId, varianteId])
+}
+
+model ElectronicDocumentLegend {
+  id                     String             @id @default(uuid()) @db.Uuid
+  inquilinoId            String             @db.Uuid
+  documentoElectronicoId String             @db.Uuid
+  codigo                 String
+  valor                  String
+  electronicDocument     ElectronicDocument @relation(fields: [documentoElectronicoId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, documentoElectronicoId, codigo])
+}
+
+model ElectronicDocumentCreditInstallment {
+  id                     String             @id @default(uuid()) @db.Uuid
+  inquilinoId            String             @db.Uuid
+  documentoElectronicoId String             @db.Uuid
+  installmentNo          Int
+  venceEn                DateTime
+  monto                  Decimal            @db.Decimal(18, 2)
+  moneda                 String             @db.Char(3)
+  electronicDocument     ElectronicDocument @relation(fields: [documentoElectronicoId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, documentoElectronicoId, installmentNo])
+  @@index([inquilinoId, venceEn])
+}
+
+model ElectronicDocumentEvent {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  inquilinoId            String                     @db.Uuid
+  documentoElectronicoId String                     @db.Uuid
+  estado                 EstadoDocumentoElectronico
+  eventType              String
+  cargaSolicitud         Json?
+  cargaRespuesta         Json?
+  message                String?
+  occurredAt             DateTime                   @default(now())
+  electronicDocument     ElectronicDocument         @relation(fields: [documentoElectronicoId], references: [id], onDelete: Restrict)
+
+  @@index([inquilinoId, documentoElectronicoId, occurredAt])
+}
+
+model PurchaseOrder {
+  id             String              @id @default(uuid()) @db.Uuid
+  inquilinoId    String              @db.Uuid
+  sucursalId     String              @db.Uuid
+  proveedorId    String              @db.Uuid
+  number         String
+  estado         EstadoOrdenCompra   @default(BORRADOR)
+  moneda         String              @db.Char(3)
+  exchangeRate   Decimal             @default(1) @db.Decimal(18, 6)
+  subtotal       Decimal             @default(0) @db.Decimal(18, 2)
+  totalDescuento Decimal             @default(0) @db.Decimal(18, 2)
+  totalImpuesto  Decimal             @default(0) @db.Decimal(18, 2)
+  total          Decimal             @default(0) @db.Decimal(18, 2)
+  expectedAt     DateTime?
+  aprobadoPorId  String?             @db.Uuid
+  notes          String?
+  creadoEn       DateTime            @default(now())
+  actualizadoEn  DateTime            @updatedAt
+  branch         Branch              @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  supplier       Supplier            @relation(fields: [inquilinoId, proveedorId], references: [inquilinoId, id], onDelete: Restrict)
+  articulos      PurchaseOrderItem[]
+  receipts       PurchaseReceipt[]
+
+  @@unique([inquilinoId, sucursalId, number])
+  @@unique([inquilinoId, id])
+  @@unique([inquilinoId, proveedorId, id])
+  @@index([inquilinoId, sucursalId, estado, creadoEn])
+  @@index([inquilinoId, proveedorId, estado])
+}
+
+model PurchaseOrderItem {
+  id             String         @id @default(uuid()) @db.Uuid
+  inquilinoId    String         @db.Uuid
+  pedidoCompraId String         @db.Uuid
+  varianteId     String         @db.Uuid
+  descripcion    String
+  cantidad       Decimal        @db.Decimal(18, 6)
+  receivedQty    Decimal        @default(0) @db.Decimal(18, 6)
+  costoUnitario  Decimal        @db.Decimal(18, 6)
+  discountAmount Decimal        @default(0) @db.Decimal(18, 2)
+  montoImpuesto  Decimal        @default(0) @db.Decimal(18, 2)
+  total          Decimal        @db.Decimal(18, 2)
+  purchaseOrder  PurchaseOrder  @relation(fields: [inquilinoId, pedidoCompraId], references: [inquilinoId, id], onDelete: Restrict)
+  variant        ProductVariant @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@unique([inquilinoId, pedidoCompraId, varianteId])
+  @@index([inquilinoId, varianteId])
+}
+
+model PurchaseReceipt {
+  id                   String                @id @default(uuid()) @db.Uuid
+  inquilinoId          String                @db.Uuid
+  idempotencyKey       String
+  pedidoCompraId       String?               @db.Uuid
+  almacenId            String                @db.Uuid
+  proveedorId          String                @db.Uuid
+  number               String
+  supplierDocumentType String?
+  supplierSeries       String?
+  supplierNumber       String?
+  estado               EstadoRecepcionCompra @default(BORRADOR)
+  moneda               String                @db.Char(3)
+  subtotal             Decimal               @default(0) @db.Decimal(18, 2)
+  totalImpuesto        Decimal               @default(0) @db.Decimal(18, 2)
+  total                Decimal               @default(0) @db.Decimal(18, 2)
+  recibidoEn           DateTime?
+  postedAt             DateTime?
+  creadoEn             DateTime              @default(now())
+  actualizadoEn        DateTime              @updatedAt
+  purchaseOrder        PurchaseOrder?        @relation(fields: [inquilinoId, proveedorId, pedidoCompraId], references: [inquilinoId, proveedorId, id], onDelete: Restrict)
+  warehouse            Warehouse             @relation(fields: [inquilinoId, almacenId], references: [inquilinoId, id], onDelete: Restrict)
+  supplier             Supplier              @relation(fields: [inquilinoId, proveedorId], references: [inquilinoId, id], onDelete: Restrict)
+  articulos            PurchaseReceiptItem[]
+  payable              AccountsPayable?
+
+  @@unique([inquilinoId, number])
+  @@unique([inquilinoId, idempotencyKey])
+  @@unique([inquilinoId, proveedorId, supplierDocumentType, supplierSeries, supplierNumber])
+  @@unique([inquilinoId, proveedorId, id])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, almacenId, estado, creadoEn])
+  @@index([inquilinoId, proveedorId, estado, creadoEn])
+  @@index([inquilinoId, pedidoCompraId])
+}
+
+model PurchaseReceiptItem {
+  id                String          @id @default(uuid()) @db.Uuid
+  inquilinoId       String          @db.Uuid
+  recepcionCompraId String          @db.Uuid
+  varianteId        String          @db.Uuid
+  cantidad          Decimal         @db.Decimal(18, 6)
+  costoUnitario     Decimal         @db.Decimal(18, 6)
+  montoImpuesto     Decimal         @default(0) @db.Decimal(18, 2)
+  total             Decimal         @db.Decimal(18, 2)
+  lotNumber         String?
+  venceEn           DateTime?
+  purchaseReceipt   PurchaseReceipt @relation(fields: [inquilinoId, recepcionCompraId], references: [inquilinoId, id], onDelete: Restrict)
+  variant           ProductVariant  @relation(fields: [inquilinoId, varianteId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@index([inquilinoId, recepcionCompraId, varianteId])
+}
+
+model PurchasePayment {
+  id             String                     @id @default(uuid()) @db.Uuid
+  inquilinoId    String                     @db.Uuid
+  proveedorId    String                     @db.Uuid
+  idempotencyKey String
+  method         MetodoPago
+  monto          Decimal                    @db.Decimal(18, 2)
+  moneda         String                     @db.Char(3)
+  referencia     String?
+  pagadoEn       DateTime                   @default(now())
+  createdById    String                     @db.Uuid
+  allocations    PayablePaymentAllocation[]
+  supplier       Supplier                   @relation(fields: [inquilinoId, proveedorId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, proveedorId, pagadoEn])
+}
+
+model AccountsReceivable {
+  id             String                     @id @default(uuid()) @db.Uuid
+  inquilinoId    String                     @db.Uuid
+  clienteId      String                     @db.Uuid
+  ventaId        String                     @unique @db.Uuid
+  moneda         String                     @db.Char(3)
+  montoOriginal  Decimal                    @db.Decimal(18, 2)
+  /// Transactional projection only; payment allocations are authoritative.
+  montoPendiente Decimal                    @db.Decimal(18, 2)
+  estado         EstadoCuentaPorCobrarPagar @default(PENDIENTE)
+  emitidoEn      DateTime
+  venceEn        DateTime
+  creadoEn       DateTime                   @default(now())
+  actualizadoEn  DateTime                   @updatedAt
+  sale           Sale                       @relation(fields: [inquilinoId, clienteId, ventaId], references: [inquilinoId, clienteId, id], onDelete: Restrict)
+  customer       Customer                   @relation(fields: [inquilinoId, clienteId], references: [inquilinoId, id], onDelete: Restrict)
+  cuotas         ReceivableInstallment[]
+
+  @@unique([inquilinoId, id])
+  @@unique([inquilinoId, clienteId, ventaId])
+  @@index([inquilinoId, clienteId, estado, venceEn])
+}
+
+model ReceivableInstallment {
+  id             String                        @id @default(uuid()) @db.Uuid
+  inquilinoId    String                        @db.Uuid
+  receivableId   String                        @db.Uuid
+  installmentNo  Int
+  venceEn        DateTime
+  monto          Decimal                       @db.Decimal(18, 2)
+  montoPendiente Decimal                       @db.Decimal(18, 2)
+  estado         EstadoCuentaPorCobrarPagar    @default(PENDIENTE)
+  receivable     AccountsReceivable            @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+  allocations    ReceivablePaymentAllocation[]
+
+  @@unique([inquilinoId, receivableId, installmentNo])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, estado, venceEn])
+}
+
+model ReceivablePayment {
+  id             String                        @id @default(uuid()) @db.Uuid
+  inquilinoId    String                        @db.Uuid
+  clienteId      String                        @db.Uuid
+  idempotencyKey String
+  method         MetodoPago
+  monto          Decimal                       @db.Decimal(18, 2)
+  moneda         String                        @db.Char(3)
+  referencia     String?
+  pagadoEn       DateTime                      @default(now())
+  createdById    String                        @db.Uuid
+  allocations    ReceivablePaymentAllocation[]
+  customer       Customer                      @relation(fields: [inquilinoId, clienteId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, clienteId, pagadoEn])
+}
+
+model ReceivablePaymentAllocation {
+  /// Authoritative application of receivable cash; open balances are projections updated in same transaction.
+  id            String                @id @default(uuid()) @db.Uuid
+  inquilinoId   String                @db.Uuid
+  paymentId     String                @db.Uuid
+  installmentId String                @db.Uuid
+  monto         Decimal               @db.Decimal(18, 2)
+  payment       ReceivablePayment     @relation(fields: [inquilinoId, paymentId], references: [inquilinoId, id], onDelete: Restrict)
+  installment   ReceivableInstallment @relation(fields: [inquilinoId, installmentId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@unique([inquilinoId, paymentId, installmentId])
+  @@index([inquilinoId, installmentId])
+}
+
+model AccountsPayable {
+  id                String                     @id @default(uuid()) @db.Uuid
+  inquilinoId       String                     @db.Uuid
+  proveedorId       String                     @db.Uuid
+  recepcionCompraId String                     @unique @db.Uuid
+  moneda            String                     @db.Char(3)
+  montoOriginal     Decimal                    @db.Decimal(18, 2)
+  /// Transactional projection only; payment allocations are authoritative.
+  montoPendiente    Decimal                    @db.Decimal(18, 2)
+  estado            EstadoCuentaPorCobrarPagar @default(PENDIENTE)
+  emitidoEn         DateTime
+  venceEn           DateTime
+  creadoEn          DateTime                   @default(now())
+  actualizadoEn     DateTime                   @updatedAt
+  purchaseReceipt   PurchaseReceipt            @relation(fields: [inquilinoId, proveedorId, recepcionCompraId], references: [inquilinoId, proveedorId, id], onDelete: Restrict)
+  supplier          Supplier                   @relation(fields: [inquilinoId, proveedorId], references: [inquilinoId, id], onDelete: Restrict)
+  cuotas            PayableInstallment[]
+
+  @@unique([inquilinoId, id])
+  @@unique([inquilinoId, proveedorId, recepcionCompraId])
+  @@index([inquilinoId, proveedorId, estado, venceEn])
+}
+
+model PayableInstallment {
+  id             String                     @id @default(uuid()) @db.Uuid
+  inquilinoId    String                     @db.Uuid
+  payableId      String                     @db.Uuid
+  installmentNo  Int
+  venceEn        DateTime
+  monto          Decimal                    @db.Decimal(18, 2)
+  montoPendiente Decimal                    @db.Decimal(18, 2)
+  estado         EstadoCuentaPorCobrarPagar @default(PENDIENTE)
+  payable        AccountsPayable            @relation(fields: [payableId], references: [id], onDelete: Restrict)
+  allocations    PayablePaymentAllocation[]
+
+  @@unique([inquilinoId, payableId, installmentNo])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, estado, venceEn])
+}
+
+model PayablePaymentAllocation {
+  /// Authoritative application of supplier cash; open balances are projections updated in same transaction.
+  id            String             @id @default(uuid()) @db.Uuid
+  inquilinoId   String             @db.Uuid
+  paymentId     String             @db.Uuid
+  installmentId String             @db.Uuid
+  monto         Decimal            @db.Decimal(18, 2)
+  payment       PurchasePayment    @relation(fields: [inquilinoId, paymentId], references: [inquilinoId, id], onDelete: Restrict)
+  installment   PayableInstallment @relation(fields: [inquilinoId, installmentId], references: [inquilinoId, id], onDelete: Restrict)
+
+  @@unique([inquilinoId, paymentId, installmentId])
+  @@index([inquilinoId, installmentId])
+}
+
+model AuditLog {
+  id                   String   @id @default(uuid()) @db.Uuid
+  inquilinoId          String   @db.Uuid
+  actorIdentityId      String?  @db.Uuid
+  actorMembershipId    String?  @db.Uuid
+  approverMembershipId String?  @db.Uuid
+  deviceId             String?
+  ipAddress            String?  @db.Inet
+  userAgent            String?
+  entityType           String
+  entityId             String
+  action               String
+  motivo               String?
+  before               Json?
+  after                Json?
+  metadata             Json?
+  correlationId        String?  @db.Uuid
+  occurredAt           DateTime @default(now())
+  creadoEn             DateTime @default(now())
+
+  @@index([inquilinoId, entityType, entityId, occurredAt])
+  @@index([inquilinoId, actorIdentityId, occurredAt])
+  @@index([inquilinoId, correlationId])
+}
+
+model OutboxEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  inquilinoId    String    @db.Uuid
+  aggregateType  String
+  aggregateId    String
+  eventType      String
+  idempotencyKey String
+  carga          Json
+  encabezados    Json?
+  occurredAt     DateTime  @default(now())
+  disponibleEn   DateTime  @default(now())
+  publicadoEn    DateTime?
+  bloqueadoEn    DateTime?
+  lockedBy       String?
+  intentos       Int       @default(0)
+  ultimoError    String?
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@index([publicadoEn, disponibleEn, bloqueadoEn])
+  @@index([inquilinoId, aggregateType, aggregateId])
+}
+
+model WebhookEndpoint {
+  id                       String            @id @default(uuid()) @db.Uuid
+  inquilinoId              String            @db.Uuid
+  url                      String
+  referenciaSecretaCifrada String
+  eventosSuscritos         String[]
+  estado                   EstadoRegistro    @default(ACTIVO)
+  creadoEn                 DateTime          @default(now())
+  actualizadoEn            DateTime          @updatedAt
+  entregas                 WebhookDelivery[]
+
+  @@index([inquilinoId, estado])
+}
+
+model WebhookDelivery {
+  id               String               @id @default(uuid()) @db.Uuid
+  inquilinoId      String               @db.Uuid
+  endpointId       String               @db.Uuid
+  eventId          String               @db.Uuid
+  idempotencyKey   String
+  estado           EstadoEntregaWebhook @default(PENDIENTE)
+  requestBody      Json
+  estadoRespuesta  Int?
+  cuerpoRespuesta  String?
+  intentos         Int                  @default(0)
+  proximoIntentoEn DateTime?
+  bloqueadoEn      DateTime?
+  lockedBy         String?
+  ultimoError      String?
+  entregadoEn      DateTime?
+  creadoEn         DateTime             @default(now())
+  actualizadoEn    DateTime             @updatedAt
+  endpoint         WebhookEndpoint      @relation(fields: [endpointId], references: [id], onDelete: Restrict)
+
+  @@unique([inquilinoId, idempotencyKey])
+  @@index([inquilinoId, estado, proximoIntentoEn])
+}
+
+model FileObject {
+  id             String               @id @default(uuid()) @db.Uuid
+  inquilinoId    String               @db.Uuid
+  storageKey     String
+  fileName       String
+  contentType    String
+  byteSize       BigInt
+  checksumSha256 String
+  purpose        String
+  metadata       Json?
+  createdById    String?              @db.Uuid
+  creadoEn       DateTime             @default(now())
+  productImages  ProductImage[]
+  certificates   SunatCertificate[]
+  documentXmls   ElectronicDocument[] @relation("DocumentoElectronicoXml")
+  documentCdrs   ElectronicDocument[] @relation("DocumentoElectronicoCdr")
+  documentPdfs   ElectronicDocument[] @relation("DocumentoElectronicoPdf")
+
+  @@unique([inquilinoId, storageKey])
+  @@index([inquilinoId, purpose, creadoEn])
+}
+
+model Notification {
+  id            String             @id @default(uuid()) @db.Uuid
+  inquilinoId   String             @db.Uuid
+  recipientId   String             @db.Uuid
+  channel       String
+  templateKey   String
+  subject       String?
+  carga         Json
+  estado        EstadoNotificacion @default(PENDIENTE)
+  programadoEn  DateTime           @default(now())
+  sentAt        DateTime?
+  readAt        DateTime?
+  intentos      Int                @default(0)
+  ultimoError   String?
+  creadoEn      DateTime           @default(now())
+  actualizadoEn DateTime           @updatedAt
+
+  @@index([inquilinoId, recipientId, estado, creadoEn])
+  @@index([inquilinoId, estado, programadoEn])
+}
