@@ -69,7 +69,8 @@ export class AutenticacionService {
   /**
    * Auto-detects the tenant from the email via the SECURITY DEFINER routing
    * function (the only sanctioned cross-tenant read). One match => use it; many
-   * => ask the client to disambiguate with a tenantCodigo; none => reject.
+   * => ask the client to disambiguate with a tenantCodigo; none => signal that
+   * the account has no workspace yet so the client can offer onboarding.
    */
   private async resolverTenantPorEmail(email: string): Promise<string> {
     const filas = await this.prisma.$queryRaw<
@@ -77,7 +78,16 @@ export class AutenticacionService {
     >`SELECT inquilino_id FROM resolver_login_por_email(${email})`;
 
     if (filas.length === 0) {
-      throw new UnauthorizedException('Acceso no autorizado');
+      // Google token is valid but the email belongs to no tenant. This is not a
+      // rejection: the user can self-onboard (create their own workspace).
+      throw new HttpException(
+        {
+          codigo: 'SIN_TENANT',
+          mensaje:
+            'La cuenta no pertenece a ninguna empresa. Crea una nueva para continuar.',
+        },
+        HttpStatus.CONFLICT,
+      );
     }
     if (filas.length === 1) {
       return filas[0].inquilino_id;
