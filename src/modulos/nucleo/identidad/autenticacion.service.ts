@@ -35,17 +35,14 @@ export class AutenticacionService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    const identidad = await this.prisma.userIdentity.findUnique({
-      where: {
-        inquilinoId_email: { inquilinoId: tenant.id, email: dto.email },
-      },
-      select: {
-        id: true,
-        email: true,
-        estado: true,
-        passwordHash: true,
-      },
-    });
+    const identidad = await this.prisma.ejecutarEnTenant(tenant.id, (tx) =>
+      tx.userIdentity.findUnique({
+        where: {
+          inquilinoId_email: { inquilinoId: tenant.id, email: dto.email },
+        },
+        select: { id: true, email: true, estado: true, passwordHash: true },
+      }),
+    );
 
     // Uniform failure to avoid leaking which factor was wrong.
     if (
@@ -61,10 +58,12 @@ export class AutenticacionService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    await this.prisma.userIdentity.update({
-      where: { id: identidad.id },
-      data: { ultimoIngresoEn: new Date() },
-    });
+    await this.prisma.ejecutarEnTenant(tenant.id, (tx) =>
+      tx.userIdentity.update({
+        where: { id: identidad.id },
+        data: { ultimoIngresoEn: new Date() },
+      }),
+    );
 
     return this.emitirTokens({
       identidadUsuarioId: identidad.id,
@@ -86,10 +85,14 @@ export class AutenticacionService {
       throw new UnauthorizedException('Refresh token inválido');
     }
 
-    const identidad = await this.prisma.userIdentity.findUnique({
-      where: { id: payload.sub },
-      select: { id: true, email: true, estado: true, inquilinoId: true },
-    });
+    const identidad = await this.prisma.ejecutarEnTenant(
+      payload.inquilinoId,
+      (tx) =>
+        tx.userIdentity.findUnique({
+          where: { id: payload.sub },
+          select: { id: true, email: true, estado: true, inquilinoId: true },
+        }),
+    );
     if (!identidad || identidad.estado !== 'ACTIVO') {
       throw new UnauthorizedException('Refresh token inválido');
     }

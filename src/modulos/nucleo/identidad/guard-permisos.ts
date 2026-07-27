@@ -38,46 +38,51 @@ export class GuardPermisos implements CanActivate {
       throw new ForbiddenException('No autenticado');
     }
 
-    const memberships = await this.prisma.membership.findMany({
-      where: {
-        inquilinoId: usuario.inquilinoId,
-        identidadUsuarioId: usuario.identidadUsuarioId,
-        estado: 'ACTIVA',
-      },
-      select: { id: true, roles: { select: { rolId: true } } },
-    });
+    const efectos = await this.prisma.ejecutarEnTenant(
+      usuario.inquilinoId,
+      async (tx) => {
+        const memberships = await tx.membership.findMany({
+          where: {
+            inquilinoId: usuario.inquilinoId,
+            identidadUsuarioId: usuario.identidadUsuarioId,
+            estado: 'ACTIVA',
+          },
+          select: { id: true, roles: { select: { rolId: true } } },
+        });
 
-    if (memberships.length === 0) {
-      throw new ForbiddenException('Sin membresía activa');
-    }
+        if (memberships.length === 0) {
+          throw new ForbiddenException('Sin membresía activa');
+        }
 
-    const membresiaIds = memberships.map((m) => m.id);
-    const rolIds = [
-      ...new Set(memberships.flatMap((m) => m.roles.map((r) => r.rolId))),
-    ];
+        const membresiaIds = memberships.map((m) => m.id);
+        const rolIds = [
+          ...new Set(memberships.flatMap((m) => m.roles.map((r) => r.rolId))),
+        ];
 
-    const [permisosRol, politicas] = await Promise.all([
-      rolIds.length
-        ? this.prisma.rolePermission.findMany({
+        const [permisosRol, politicas] = await Promise.all([
+          rolIds.length
+            ? tx.rolePermission.findMany({
+                where: {
+                  inquilinoId: usuario.inquilinoId,
+                  rolId: { in: rolIds },
+                  permission: { clave: permisoRequerido },
+                },
+                select: { effect: true },
+              })
+            : Promise.resolve([]),
+          tx.accessPolicy.findMany({
             where: {
               inquilinoId: usuario.inquilinoId,
-              rolId: { in: rolIds },
-              permission: { clave: permisoRequerido },
+              membresiaId: { in: membresiaIds },
+              permissionKey: permisoRequerido,
             },
             select: { effect: true },
-          })
-        : Promise.resolve([]),
-      this.prisma.accessPolicy.findMany({
-        where: {
-          inquilinoId: usuario.inquilinoId,
-          membresiaId: { in: membresiaIds },
-          permissionKey: permisoRequerido,
-        },
-        select: { effect: true },
-      }),
-    ]);
+          }),
+        ]);
 
-    const efectos = [...permisosRol, ...politicas].map((e) => e.effect);
+        return [...permisosRol, ...politicas].map((e) => e.effect);
+      },
+    );
 
     if (efectos.includes('DENEGAR')) {
       throw new ForbiddenException(`Permiso denegado: ${permisoRequerido}`);

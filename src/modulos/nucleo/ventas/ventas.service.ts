@@ -33,25 +33,32 @@ export class VentasService {
   async crear(dto: CrearVentaDto) {
     const { inquilinoId, identidadUsuarioId } = this.contexto.obtenerObligatorio();
 
-    // Idempotency: a retry with the same key returns the original sale instead
-    // of creating a duplicate (safe for offline sync and network timeouts).
-    const existente = await this.prisma.sale.findUnique({
-      where: { inquilinoId_idempotencyKey: { inquilinoId, idempotencyKey: dto.idempotencyKey } },
-      select: { id: true, number: true, total: true, estado: true },
-    });
-    if (existente) {
-      return { ...existente, idempotente: true };
-    }
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      // Idempotency: a retry with the same key returns the original sale
+      // instead of duplicating (safe for offline sync and network timeouts).
+      const existente = await tx.sale.findUnique({
+        where: {
+          inquilinoId_idempotencyKey: {
+            inquilinoId,
+            idempotencyKey: dto.idempotencyKey,
+          },
+        },
+        select: { id: true, number: true, total: true, estado: true },
+      });
+      if (existente) {
+        return { ...existente, idempotente: true };
+      }
 
-    const cajero = await this.prisma.membership.findFirst({
-      where: { inquilinoId, identidadUsuarioId, estado: 'ACTIVA' },
-      select: { id: true },
-    });
-    if (!cajero) {
-      throw new ConflictException('El usuario no tiene una membresía activa para vender');
-    }
+      const cajero = await tx.membership.findFirst({
+        where: { inquilinoId, identidadUsuarioId, estado: 'ACTIVA' },
+        select: { id: true },
+      });
+      if (!cajero) {
+        throw new ConflictException(
+          'El usuario no tiene una membresía activa para vender',
+        );
+      }
 
-    return this.prisma.$transaction(async (tx) => {
       const lineas = this.calcularLineas(dto.items);
       const subtotal = lineas.reduce(
         (acc, l) => acc.add(l.montoBruto),
