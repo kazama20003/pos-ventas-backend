@@ -138,6 +138,11 @@ export class AutenticacionService {
     });
   }
 
+  /** Issues tokens for an already-resolved identity (used by onboarding). */
+  emitirTokensParaUsuario(usuario: UsuarioAutenticado): Promise<TokensEmitidos> {
+    return this.emitirTokens(usuario);
+  }
+
   private async emitirTokens(
     usuario: UsuarioAutenticado,
   ): Promise<TokensEmitidos> {

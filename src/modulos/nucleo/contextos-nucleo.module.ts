@@ -7,6 +7,7 @@ import { CompaniesModule } from './empresas/empresas.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { IdentityModule } from './identidad/identidad.module';
 import { IntegrationsModule } from './integraciones/integraciones.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 import { InventoryModule } from './inventario/inventario.module';
 import { PaymentsModule } from './pagos/pagos.module';
 import { PurchasesModule } from './compras/compras.module';
@@ -21,6 +22,7 @@ import { UsersModule } from './usuarios/usuarios.module';
   imports: [
     TenancyModule,
     IdentityModule,
+    OnboardingModule,
     UsersModule,
     CompaniesModule,
     BranchesModule,

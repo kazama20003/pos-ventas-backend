@@ -28,6 +28,6 @@ import { VerificadorGoogle } from './verificador-google';
     VerificadorGoogle,
     CatalogoPermisosService,
   ],
-  exports: [GuardPermisos],
+  exports: [GuardPermisos, AutenticacionService, VerificadorGoogle],
 })
 export class IdentityModule {}
