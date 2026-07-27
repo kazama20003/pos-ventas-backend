@@ -7,7 +7,12 @@ import { AppConfigService } from '../configuracion/configuracion-aplicacion.serv
 export class CorePrismaService extends PrismaClient implements OnModuleDestroy {
   constructor(config: AppConfigService) {
     super({
-      adapter: new PrismaPg({ connectionString: config.coreDatabaseUrl }),
+      adapter: new PrismaPg({
+        connectionString: config.coreDatabaseUrl,
+        max: config.databasePoolMax,
+        connectionTimeoutMillis: 5000,
+        idleTimeoutMillis: 30000,
+      }),
     });
   }
 

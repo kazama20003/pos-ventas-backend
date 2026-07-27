@@ -9,6 +9,11 @@ export class AppConfigService {
   readonly port: number;
   readonly coreDatabaseUrl: string;
   readonly managementDatabaseUrl: string;
+  readonly jwtSecret: string;
+  readonly jwtExpiresIn: string;
+  readonly corsOrigin: string;
+  readonly logLevel: string;
+  readonly databasePoolMax: number;
 
   constructor() {
     const environment = process.env.ENV ?? 'local';
@@ -22,12 +27,29 @@ export class AppConfigService {
     this.port = Number(process.env.PORT ?? 3000);
     this.coreDatabaseUrl = this.required('CORE_DATABASE_URL');
     this.managementDatabaseUrl = this.required('MANAGEMENT_DATABASE_URL');
+    this.jwtSecret = this.requireSecret('JWT_SECRET', 32);
+    this.jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? '15m';
+    this.corsOrigin = process.env.CORS_ORIGIN ?? '*';
+    this.logLevel = process.env.LOG_LEVEL ?? 'log';
+    this.databasePoolMax = Number(process.env.DATABASE_POOL_MAX ?? 10);
+  }
+
+  get isProduction(): boolean {
+    return this.environment === 'production';
   }
 
   private required(name: string): string {
     const value = process.env[name];
     if (!value) {
       throw new Error(`${name} is required`);
+    }
+    return value;
+  }
+
+  private requireSecret(name: string, minLength: number): string {
+    const value = this.required(name);
+    if (value.length < minLength) {
+      throw new Error(`${name} must be at least ${minLength} characters long`);
     }
     return value;
   }

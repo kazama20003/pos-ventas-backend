@@ -10,7 +10,12 @@ export class ManagementPrismaService
 {
   constructor(config: AppConfigService) {
     super({
-      adapter: new PrismaPg({ connectionString: config.managementDatabaseUrl }),
+      adapter: new PrismaPg({
+        connectionString: config.managementDatabaseUrl,
+        max: config.databasePoolMax,
+        connectionTimeoutMillis: 5000,
+        idleTimeoutMillis: 30000,
+      }),
     });
   }
 

@@ -12,5 +12,10 @@ config({ path: `.env.${environment}`, quiet: true });
 export default defineConfig({
   schema: 'schema.prisma',
   migrations: { path: 'migraciones' },
-  datasource: { url: env('CORE_DATABASE_URL') },
+  datasource: {
+    url: env('CORE_DATABASE_URL'),
+    ...(process.env['CORE_SHADOW_DATABASE_URL']
+      ? { shadowDatabaseUrl: process.env['CORE_SHADOW_DATABASE_URL'] }
+      : {}),
+  },
 });
