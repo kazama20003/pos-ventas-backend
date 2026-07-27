@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {
   AppConfigService,
@@ -10,7 +15,7 @@ import {
   TokensEmitidos,
   UsuarioAutenticado,
 } from './autenticacion.tipos';
-import { VerificadorGoogle } from './verificador-google';
+import { IdentidadGoogle, VerificadorGoogle } from './verificador-google';
 
 const REFRESH_EXPIRES_IN: DuracionJwt = '7d';
 
@@ -29,30 +34,80 @@ export class AutenticacionService {
   ) {}
 
   /**
-   * Passwordless login. Verifies the Google ID token, then binds it to a
-   * pre-provisioned (invited) identity in the target tenant. Access is
-   * invitation-only: no invitation for that email => no entry.
+   * Passwordless login. Verifies the Google ID token, resolves the target
+   * tenant (explicit code, or auto-detected from the email), then binds the
+   * account to its pre-provisioned (invited) identity. Invitation-only: no
+   * invitation for that email => no entry.
    */
-  async loginGoogle(idToken: string, tenantCodigo: string): Promise<TokensEmitidos> {
+  async loginGoogle(
+    idToken: string,
+    tenantCodigo?: string,
+  ): Promise<TokensEmitidos> {
     const identidadGoogle = await this.google.verificar(idToken);
     if (!identidadGoogle.emailVerificado) {
       throw new UnauthorizedException('El correo de Google no está verificado');
     }
 
+    const inquilinoId = tenantCodigo
+      ? await this.resolverTenantPorCodigo(tenantCodigo)
+      : await this.resolverTenantPorEmail(identidadGoogle.email);
+
+    return this.vincularYEmitir(inquilinoId, identidadGoogle);
+  }
+
+  private async resolverTenantPorCodigo(codigo: string): Promise<string> {
     const tenant = await this.prisma.tenant.findUnique({
-      where: { codigo: tenantCodigo },
+      where: { codigo },
       select: { id: true, estado: true },
     });
     if (!tenant || tenant.estado !== 'ACTIVO') {
       throw new UnauthorizedException('Acceso no autorizado');
     }
+    return tenant.id;
+  }
 
+  /**
+   * Auto-detects the tenant from the email via the SECURITY DEFINER routing
+   * function (the only sanctioned cross-tenant read). One match => use it; many
+   * => ask the client to disambiguate with a tenantCodigo; none => reject.
+   */
+  private async resolverTenantPorEmail(email: string): Promise<string> {
+    const filas = await this.prisma.$queryRaw<
+      { inquilino_id: string }[]
+    >`SELECT inquilino_id FROM resolver_login_por_email(${email})`;
+
+    if (filas.length === 0) {
+      throw new UnauthorizedException('Acceso no autorizado');
+    }
+    if (filas.length === 1) {
+      return filas[0].inquilino_id;
+    }
+
+    const tenants = await this.prisma.tenant.findMany({
+      where: { id: { in: filas.map((f) => f.inquilino_id) }, estado: 'ACTIVO' },
+      select: { codigo: true, nombre: true },
+    });
+    throw new HttpException(
+      {
+        codigo: 'SELECCION_TENANT_REQUERIDA',
+        mensaje:
+          'El correo pertenece a varias empresas. Reintenta enviando tenantCodigo.',
+        tenants,
+      },
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  private async vincularYEmitir(
+    inquilinoId: string,
+    identidadGoogle: IdentidadGoogle,
+  ): Promise<TokensEmitidos> {
     const sujetoGoogle = `${PREFIJO_GOOGLE}${identidadGoogle.sub}`;
 
-    const identidad = await this.prisma.ejecutarEnTenant(tenant.id, async (tx) => {
+    const identidad = await this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       const existente = await tx.userIdentity.findUnique({
         where: {
-          inquilinoId_email: { inquilinoId: tenant.id, email: identidadGoogle.email },
+          inquilinoId_email: { inquilinoId, email: identidadGoogle.email },
         },
         select: { id: true, email: true, estado: true, sujetoExterno: true },
       });
@@ -62,11 +117,11 @@ export class AutenticacionService {
         return null;
       }
 
-      const requiereMembresiaActiva = await tx.membership.findFirst({
-        where: { inquilinoId: tenant.id, identidadUsuarioId: existente.id },
+      const membresia = await tx.membership.findFirst({
+        where: { inquilinoId, identidadUsuarioId: existente.id },
         select: { id: true, estado: true },
       });
-      if (!requiereMembresiaActiva) {
+      if (!membresia) {
         return null;
       }
 
@@ -76,9 +131,9 @@ export class AutenticacionService {
           where: { id: existente.id },
           data: { sujetoExterno: sujetoGoogle, ultimoIngresoEn: new Date() },
         });
-        if (requiereMembresiaActiva.estado === 'INVITADA') {
+        if (membresia.estado === 'INVITADA') {
           await tx.membership.update({
-            where: { id: requiereMembresiaActiva.id },
+            where: { id: membresia.id },
             data: { estado: 'ACTIVA' },
           });
         }
@@ -101,7 +156,7 @@ export class AutenticacionService {
 
     return this.emitirTokens({
       identidadUsuarioId: identidad.id,
-      inquilinoId: tenant.id,
+      inquilinoId,
       email: identidad.email,
     });
   }

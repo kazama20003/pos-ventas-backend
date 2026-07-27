@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '../../../../generado/operaciones/client';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
+import { generarSlug } from '../../../compartido/utilidades/slug';
 import { AutenticacionService, PREFIJO_GOOGLE } from '../identidad/autenticacion.service';
 import { CATALOGO_PERMISOS } from '../identidad/catalogo-permisos';
 import { VerificadorGoogle } from '../identidad/verificador-google';
@@ -35,25 +36,9 @@ export class OnboardingService {
     const nombreAdmin =
       dto.adminNombre ?? identidadGoogle.nombre ?? email;
 
-    const resultado = await this.prisma.$transaction(async (tx) => {
-      // Tenant is not tenant-scoped (no RLS), so it can be created first.
-      const tenant = await tx.tenant
-        .create({
-          data: { codigo: dto.tenantCodigo, nombre: dto.tenantNombre },
-          select: { id: true, codigo: true },
-        })
-        .catch((e: unknown) => {
-          if (
-            e instanceof Prisma.PrismaClientKnownRequestError &&
-            e.code === 'P2002'
-          ) {
-            throw new ConflictException(
-              `El código de empresa "${dto.tenantCodigo}" ya está en uso`,
-            );
-          }
-          throw e;
-        });
+    const base = generarSlug(dto.tenantCodigo ?? dto.empresaRazonSocial);
 
+    const resultado = await this.crearTenantConReintento(base, dto.tenantNombre, async (tx, tenant) => {
       // From here every insert must carry this tenant; set the RLS GUC so the
       // policies' WITH CHECK passes for the new tenant's rows.
       await tx.$executeRaw`SELECT set_config('app.inquilino_id', ${tenant.id}, true)`;
@@ -151,5 +136,61 @@ export class OnboardingService {
       admin: { id: resultado.adminId, email: resultado.email },
       tokens,
     };
+  }
+
+  /**
+   * Creates the tenant with a unique code and runs the rest of the onboarding
+   * in the same transaction. On a rare code collision (two registrations at
+   * once) it retries with the next free candidate; the unique constraint is the
+   * final guard.
+   */
+  private async crearTenantConReintento<T>(
+    base: string,
+    nombre: string,
+    fn: (
+      tx: Prisma.TransactionClient,
+      tenant: { id: string; codigo: string },
+    ) => Promise<T>,
+  ): Promise<T> {
+    const MAX_INTENTOS = 6;
+    for (let intento = 0; intento < MAX_INTENTOS; intento++) {
+      const codigo = await this.elegirCodigoLibre(base);
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const tenant = await tx.tenant.create({
+            data: { codigo, nombre },
+            select: { id: true, codigo: true },
+          });
+          return fn(tx, tenant);
+        });
+      } catch (e) {
+        if (
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002' &&
+          intento < MAX_INTENTOS - 1
+        ) {
+          continue; // code taken between check and insert; try the next one
+        }
+        throw e;
+      }
+    }
+    throw new ConflictException('No se pudo generar un código de empresa único');
+  }
+
+  /** Picks the first free code of the form base, base-2, base-3, ... */
+  private async elegirCodigoLibre(base: string): Promise<string> {
+    const existentes = await this.prisma.tenant.findMany({
+      where: { codigo: { startsWith: base } },
+      select: { codigo: true },
+    });
+    const usados = new Set(existentes.map((t) => t.codigo));
+    if (!usados.has(base)) {
+      return base;
+    }
+    let sufijo = 2;
+    while (usados.has(`${base}-${sufijo}`)) {
+      sufijo++;
+    }
+    return `${base}-${sufijo}`;
   }
 }

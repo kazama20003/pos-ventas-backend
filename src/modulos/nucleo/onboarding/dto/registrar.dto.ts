@@ -14,12 +14,17 @@ export class RegistrarEmpresaDto {
   @IsNotEmpty()
   idToken!: string;
 
-  /** Unique tenant code used at login and in URLs. */
+  /**
+   * Optional preferred tenant code (login/URL slug). If omitted we derive a
+   * unique slug from the company name. If provided it is slugified and made
+   * unique too, so collisions never happen.
+   */
+  @IsOptional()
   @IsString()
   @Matches(/^[A-Za-z0-9_-]{3,40}$/, {
     message: 'tenantCodigo: 3-40 caracteres alfanuméricos, guion o guion bajo',
   })
-  tenantCodigo!: string;
+  tenantCodigo?: string;
 
   @IsString()
   @MinLength(2)
