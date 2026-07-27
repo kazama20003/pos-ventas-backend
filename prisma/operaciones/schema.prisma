@@ -1099,12 +1099,13 @@ model Quotation {
   customerSnapshot Json?
   creadoEn         DateTime                 @default(now())
   actualizadoEn    DateTime                 @updatedAt
-  branch           Branch                   @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  customer         Customer?                @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  branch           Branch                   @relation(fields: [inquilinoId, sucursalId], references: [inquilinoId, id], onDelete: Restrict)
+  customer         Customer?                @relation(fields: [inquilinoId, clienteId], references: [inquilinoId, id], onDelete: Restrict)
   articulos        QuotationItem[]
   pedidosVenta     SalesOrder[]
   ventas           Sale[]
 
+  @@unique([inquilinoId, id])
   @@unique([inquilinoId, sucursalId, number])
   @@index([inquilinoId, sucursalId, estado, creadoEn])
 }
@@ -1145,12 +1146,13 @@ model SalesOrder {
   customerSnapshot Json?
   creadoEn         DateTime                 @default(now())
   actualizadoEn    DateTime                 @updatedAt
-  branch           Branch                   @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  customer         Customer?                @relation(fields: [clienteId], references: [id], onDelete: Restrict)
-  quotation        Quotation?               @relation(fields: [cotizacionId], references: [id], onDelete: Restrict)
+  branch           Branch                   @relation(fields: [inquilinoId, sucursalId], references: [inquilinoId, id], onDelete: Restrict)
+  customer         Customer?                @relation(fields: [inquilinoId, clienteId], references: [inquilinoId, id], onDelete: Restrict)
+  quotation        Quotation?               @relation(fields: [inquilinoId, cotizacionId], references: [inquilinoId, id], onDelete: Restrict)
   articulos        SalesOrderItem[]
   ventas           Sale[]
 
+  @@unique([inquilinoId, id])
   @@unique([inquilinoId, sucursalId, number])
   @@index([inquilinoId, sucursalId, estado, creadoEn])
 }
@@ -1214,8 +1216,8 @@ model Sale {
   cashSession            CashSession?         @relation(fields: [inquilinoId, sucursalId, sesionCajaId], references: [inquilinoId, sucursalId, id], onDelete: Restrict)
   customer               Customer?            @relation(fields: [inquilinoId, clienteId], references: [inquilinoId, id], onDelete: Restrict)
   cashierMembership      Membership           @relation(fields: [inquilinoId, cashierMembershipId], references: [inquilinoId, id], onDelete: Restrict)
-  quotation              Quotation?           @relation(fields: [cotizacionId], references: [id], onDelete: Restrict)
-  salesOrder             SalesOrder?          @relation(fields: [pedidoVentaId], references: [id], onDelete: Restrict)
+  quotation              Quotation?           @relation(fields: [inquilinoId, cotizacionId], references: [inquilinoId, id], onDelete: Restrict)
+  salesOrder             SalesOrder?          @relation(fields: [inquilinoId, pedidoVentaId], references: [inquilinoId, id], onDelete: Restrict)
   articulos              SaleItem[]
   discounts              SaleDiscount[]
   taxes                  SaleTax[]
@@ -1635,7 +1637,7 @@ model DocumentSeries {
   estado        EstadoRegistro           @default(ACTIVO)
   creadoEn      DateTime                 @default(now())
   actualizadoEn DateTime                 @updatedAt
-  company       Company                  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  company       Company                  @relation(fields: [inquilinoId, empresaId], references: [inquilinoId, id], onDelete: Restrict)
   documentos    ElectronicDocument[]
 
   @@unique([inquilinoId, empresaId, documentType, series])
