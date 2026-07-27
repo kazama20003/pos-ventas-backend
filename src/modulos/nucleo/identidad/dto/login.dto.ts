@@ -1,14 +1,13 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 
-export class LoginDto {
+export class LoginGoogleDto {
+  /** Google ID token obtained by the client after Google sign-in. */
+  @IsString()
+  @IsNotEmpty()
+  idToken!: string;
+
+  /** Company the user is signing into (an email may belong to several). */
   @IsString()
   @IsNotEmpty()
   tenantCodigo!: string;
-
-  @IsEmail()
-  email!: string;
-
-  @IsString()
-  @MinLength(8)
-  password!: string;
 }

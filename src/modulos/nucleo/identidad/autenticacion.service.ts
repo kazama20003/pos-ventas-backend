@@ -1,22 +1,23 @@
-import {
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcryptjs';
-import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import {
   AppConfigService,
   DuracionJwt,
 } from '../../../compartido/configuracion/configuracion-aplicacion.service';
+import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import {
   PayloadJwt,
   TokensEmitidos,
   UsuarioAutenticado,
 } from './autenticacion.tipos';
-import { LoginDto } from './dto/login.dto';
+import { VerificadorGoogle } from './verificador-google';
 
 const REFRESH_EXPIRES_IN: DuracionJwt = '7d';
+
+/** Prefix used for an invited-but-not-yet-signed-in identity. */
+export const PREFIJO_INVITACION = 'invitacion:';
+/** Prefix used once a Google account has been bound to an identity. */
+export const PREFIJO_GOOGLE = 'google:';
 
 @Injectable()
 export class AutenticacionService {
@@ -24,46 +25,79 @@ export class AutenticacionService {
     private readonly prisma: CorePrismaService,
     private readonly jwt: JwtService,
     private readonly config: AppConfigService,
+    private readonly google: VerificadorGoogle,
   ) {}
 
-  async login(dto: LoginDto): Promise<TokensEmitidos> {
+  /**
+   * Passwordless login. Verifies the Google ID token, then binds it to a
+   * pre-provisioned (invited) identity in the target tenant. Access is
+   * invitation-only: no invitation for that email => no entry.
+   */
+  async loginGoogle(idToken: string, tenantCodigo: string): Promise<TokensEmitidos> {
+    const identidadGoogle = await this.google.verificar(idToken);
+    if (!identidadGoogle.emailVerificado) {
+      throw new UnauthorizedException('El correo de Google no está verificado');
+    }
+
     const tenant = await this.prisma.tenant.findUnique({
-      where: { codigo: dto.tenantCodigo },
+      where: { codigo: tenantCodigo },
       select: { id: true, estado: true },
     });
     if (!tenant || tenant.estado !== 'ACTIVO') {
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new UnauthorizedException('Acceso no autorizado');
     }
 
-    const identidad = await this.prisma.ejecutarEnTenant(tenant.id, (tx) =>
-      tx.userIdentity.findUnique({
+    const sujetoGoogle = `${PREFIJO_GOOGLE}${identidadGoogle.sub}`;
+
+    const identidad = await this.prisma.ejecutarEnTenant(tenant.id, async (tx) => {
+      const existente = await tx.userIdentity.findUnique({
         where: {
-          inquilinoId_email: { inquilinoId: tenant.id, email: dto.email },
+          inquilinoId_email: { inquilinoId: tenant.id, email: identidadGoogle.email },
         },
-        select: { id: true, email: true, estado: true, passwordHash: true },
-      }),
-    );
+        select: { id: true, email: true, estado: true, sujetoExterno: true },
+      });
 
-    // Uniform failure to avoid leaking which factor was wrong.
-    if (
-      !identidad ||
-      identidad.estado !== 'ACTIVO' ||
-      !identidad.passwordHash
-    ) {
-      throw new UnauthorizedException('Credenciales inválidas');
+      // Invitation-only: the identity must have been provisioned by an admin.
+      if (!existente || existente.estado !== 'ACTIVO') {
+        return null;
+      }
+
+      const requiereMembresiaActiva = await tx.membership.findFirst({
+        where: { inquilinoId: tenant.id, identidadUsuarioId: existente.id },
+        select: { id: true, estado: true },
+      });
+      if (!requiereMembresiaActiva) {
+        return null;
+      }
+
+      // First Google sign-in: bind the subject and activate the membership.
+      if (existente.sujetoExterno.startsWith(PREFIJO_INVITACION)) {
+        await tx.userIdentity.update({
+          where: { id: existente.id },
+          data: { sujetoExterno: sujetoGoogle, ultimoIngresoEn: new Date() },
+        });
+        if (requiereMembresiaActiva.estado === 'INVITADA') {
+          await tx.membership.update({
+            where: { id: requiereMembresiaActiva.id },
+            data: { estado: 'ACTIVA' },
+          });
+        }
+      } else if (existente.sujetoExterno !== sujetoGoogle) {
+        // Email already bound to a different Google account: reject.
+        return null;
+      } else {
+        await tx.userIdentity.update({
+          where: { id: existente.id },
+          data: { ultimoIngresoEn: new Date() },
+        });
+      }
+
+      return { id: existente.id, email: existente.email };
+    });
+
+    if (!identidad) {
+      throw new UnauthorizedException('Acceso no autorizado');
     }
-
-    const valido = await bcrypt.compare(dto.password, identidad.passwordHash);
-    if (!valido) {
-      throw new UnauthorizedException('Credenciales inválidas');
-    }
-
-    await this.prisma.ejecutarEnTenant(tenant.id, (tx) =>
-      tx.userIdentity.update({
-        where: { id: identidad.id },
-        data: { ultimoIngresoEn: new Date() },
-      }),
-    );
 
     return this.emitirTokens({
       identidadUsuarioId: identidad.id,

@@ -14,6 +14,7 @@ export class AppConfigService {
   readonly managementDatabaseUrl: string;
   readonly jwtSecret: string;
   readonly jwtExpiresIn: DuracionJwt;
+  readonly googleClientId: string;
   readonly corsOrigin: string;
   readonly logLevel: string;
   readonly databasePoolMax: number;
@@ -32,6 +33,7 @@ export class AppConfigService {
     this.managementDatabaseUrl = this.required('MANAGEMENT_DATABASE_URL');
     this.jwtSecret = this.requireSecret('JWT_SECRET', 32);
     this.jwtExpiresIn = (process.env.JWT_EXPIRES_IN ?? '15m') as DuracionJwt;
+    this.googleClientId = this.required('GOOGLE_CLIENT_ID');
     this.corsOrigin = process.env.CORS_ORIGIN ?? '*';
     this.logLevel = process.env.LOG_LEVEL ?? 'log';
     this.databasePoolMax = Number(process.env.DATABASE_POOL_MAX ?? 10);

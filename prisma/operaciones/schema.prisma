@@ -450,12 +450,11 @@ model Terminal {
 model UserIdentity {
   id              String         @id @default(uuid()) @db.Uuid
   inquilinoId     String         @db.Uuid
+  /// Federated identity subject. Placeholder "invitacion:<email>" until the
+  /// user first signs in with Google, then bound to "google:<sub>".
   sujetoExterno   String
   email           String
   nombreVisible   String
-  /// Nullable: local identities store a bcrypt hash here; federated
-  /// identities authenticate via sujetoExterno and leave this null.
-  passwordHash    String?
   estado          EstadoRegistro @default(ACTIVO)
   ultimoIngresoEn DateTime?
   creadoEn        DateTime       @default(now())

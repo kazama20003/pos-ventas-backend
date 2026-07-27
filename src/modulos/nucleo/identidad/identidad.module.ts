@@ -4,8 +4,10 @@ import { PassportModule } from '@nestjs/passport';
 import { AppConfigService } from '../../../compartido/configuracion/configuracion-aplicacion.service';
 import { AutenticacionController } from './autenticacion.controller';
 import { AutenticacionService } from './autenticacion.service';
+import { CatalogoPermisosService } from './catalogo-permisos';
 import { EstrategiaJwt } from './estrategia-jwt';
 import { GuardPermisos } from './guard-permisos';
+import { VerificadorGoogle } from './verificador-google';
 
 @Module({
   imports: [
@@ -19,7 +21,13 @@ import { GuardPermisos } from './guard-permisos';
     }),
   ],
   controllers: [AutenticacionController],
-  providers: [AutenticacionService, EstrategiaJwt, GuardPermisos],
+  providers: [
+    AutenticacionService,
+    EstrategiaJwt,
+    GuardPermisos,
+    VerificadorGoogle,
+    CatalogoPermisosService,
+  ],
   exports: [GuardPermisos],
 })
 export class IdentityModule {}
