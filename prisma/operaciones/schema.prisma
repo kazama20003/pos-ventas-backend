@@ -453,6 +453,9 @@ model UserIdentity {
   sujetoExterno   String
   email           String
   nombreVisible   String
+  /// Nullable: local identities store a bcrypt hash here; federated
+  /// identities authenticate via sujetoExterno and leave this null.
+  passwordHash    String?
   estado          EstadoRegistro @default(ACTIVO)
   ultimoIngresoEn DateTime?
   creadoEn        DateTime       @default(now())

@@ -3,6 +3,9 @@ import { config } from 'dotenv';
 
 export type Environment = 'local' | 'production' | 'test';
 
+/** Matches the `ms` StringValue accepted by jsonwebtoken (e.g. "15m", "7d"). */
+export type DuracionJwt = `${number}${'s' | 'm' | 'h' | 'd' | 'y'}`;
+
 @Injectable()
 export class AppConfigService {
   readonly environment: Environment;
@@ -10,7 +13,7 @@ export class AppConfigService {
   readonly coreDatabaseUrl: string;
   readonly managementDatabaseUrl: string;
   readonly jwtSecret: string;
-  readonly jwtExpiresIn: string;
+  readonly jwtExpiresIn: DuracionJwt;
   readonly corsOrigin: string;
   readonly logLevel: string;
   readonly databasePoolMax: number;
@@ -28,7 +31,7 @@ export class AppConfigService {
     this.coreDatabaseUrl = this.required('CORE_DATABASE_URL');
     this.managementDatabaseUrl = this.required('MANAGEMENT_DATABASE_URL');
     this.jwtSecret = this.requireSecret('JWT_SECRET', 32);
-    this.jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? '15m';
+    this.jwtExpiresIn = (process.env.JWT_EXPIRES_IN ?? '15m') as DuracionJwt;
     this.corsOrigin = process.env.CORS_ORIGIN ?? '*';
     this.logLevel = process.env.LOG_LEVEL ?? 'log';
     this.databasePoolMax = Number(process.env.DATABASE_POOL_MAX ?? 10);
