@@ -6,7 +6,10 @@ import {
 import { Prisma } from '../../../../generado/operaciones/client';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import { generarSlug } from '../../../compartido/utilidades/slug';
-import { AutenticacionService, PREFIJO_GOOGLE } from '../identidad/autenticacion.service';
+import {
+  AutenticacionService,
+  PREFIJO_GOOGLE,
+} from '../identidad/autenticacion.service';
 import { CATALOGO_PERMISOS } from '../identidad/catalogo-permisos';
 import { VerificadorGoogle } from '../identidad/verificador-google';
 import { RegistrarEmpresaDto } from './dto/registrar.dto';
@@ -33,94 +36,116 @@ export class OnboardingService {
     }
     const email = identidadGoogle.email;
     const sujetoExterno = `${PREFIJO_GOOGLE}${identidadGoogle.sub}`;
-    const nombreAdmin =
-      dto.adminNombre ?? identidadGoogle.nombre ?? email;
+    const nombreAdmin = dto.adminNombre ?? identidadGoogle.nombre ?? email;
 
     const base = generarSlug(dto.tenantCodigo ?? dto.empresaRazonSocial);
 
-    const resultado = await this.crearTenantConReintento(base, dto.tenantNombre, async (tx, tenant) => {
-      // From here every insert must carry this tenant; set the RLS GUC so the
-      // policies' WITH CHECK passes for the new tenant's rows.
-      await tx.$executeRaw`SELECT set_config('app.inquilino_id', ${tenant.id}, true)`;
+    const resultado = await this.crearTenantConReintento(
+      base,
+      dto.tenantNombre,
+      async (tx, tenant) => {
+        // From here every insert must carry this tenant; set the RLS GUC so the
+        // policies' WITH CHECK passes for the new tenant's rows.
+        await tx.$executeRaw`SELECT set_config('app.inquilino_id', ${tenant.id}, true)`;
 
-      const organizacion = await tx.organization.create({
-        data: {
-          inquilinoId: tenant.id,
-          codigo: 'PRINCIPAL',
-          nombre: dto.organizacionNombre,
-        },
-        select: { id: true },
-      });
+        const organizacion = await tx.organization.create({
+          data: {
+            inquilinoId: tenant.id,
+            codigo: 'PRINCIPAL',
+            nombre: dto.organizacionNombre,
+          },
+          select: { id: true },
+        });
 
-      await tx.company.create({
-        data: {
-          inquilinoId: tenant.id,
-          organizacionId: organizacion.id,
-          razonSocial: dto.empresaRazonSocial,
-          ruc: dto.empresaRuc,
-        },
-      });
+        await tx.company.create({
+          data: {
+            inquilinoId: tenant.id,
+            organizacionId: organizacion.id,
+            razonSocial: dto.empresaRazonSocial,
+            ruc: dto.empresaRuc,
+          },
+        });
 
-      const admin = await tx.userIdentity.create({
-        data: {
-          inquilinoId: tenant.id,
-          sujetoExterno,
-          email,
-          nombreVisible: nombreAdmin,
-          estado: 'ACTIVO',
-          ultimoIngresoEn: new Date(),
-        },
-        select: { id: true, email: true },
-      });
+        await tx.outboxEvent.create({
+          data: {
+            inquilinoId: tenant.id,
+            aggregateType: 'Tenant',
+            aggregateId: tenant.id,
+            eventType: 'tenant.created',
+            idempotencyKey: `tenant.created:${tenant.id}`,
+            carga: {
+              tenantId: tenant.id,
+              slug: tenant.codigo,
+              nombreVisible: tenant.nombre,
+              razonSocial: dto.empresaRazonSocial,
+              region: 'global',
+              timezone: 'America/Lima',
+              locale: 'es-PE',
+            },
+          },
+        });
 
-      const rolAdmin = await tx.role.create({
-        data: {
-          inquilinoId: tenant.id,
-          codigo: 'ADMIN',
-          nombre: 'Administrador',
-          descripcion: 'Rol con control total del POS',
-          isSystem: true,
-        },
-        select: { id: true },
-      });
+        const admin = await tx.userIdentity.create({
+          data: {
+            inquilinoId: tenant.id,
+            sujetoExterno,
+            email,
+            nombreVisible: nombreAdmin,
+            estado: 'ACTIVO',
+            ultimoIngresoEn: new Date(),
+          },
+          select: { id: true, email: true },
+        });
 
-      const permisos = await tx.permission.findMany({
-        where: { clave: { in: CATALOGO_PERMISOS.map((p) => p.clave) } },
-        select: { id: true },
-      });
-      await tx.rolePermission.createMany({
-        data: permisos.map((p) => ({
-          inquilinoId: tenant.id,
-          rolId: rolAdmin.id,
-          permisoId: p.id,
-          effect: 'PERMITIR' as const,
-        })),
-      });
+        const rolAdmin = await tx.role.create({
+          data: {
+            inquilinoId: tenant.id,
+            codigo: 'ADMIN',
+            nombre: 'Administrador',
+            descripcion: 'Rol con control total del POS',
+            isSystem: true,
+          },
+          select: { id: true },
+        });
 
-      const membresia = await tx.membership.create({
-        data: {
-          inquilinoId: tenant.id,
-          organizacionId: organizacion.id,
-          identidadUsuarioId: admin.id,
-          estado: 'ACTIVA',
-        },
-        select: { id: true },
-      });
-      await tx.membershipRole.create({
-        data: {
-          inquilinoId: tenant.id,
-          membresiaId: membresia.id,
-          rolId: rolAdmin.id,
-        },
-      });
+        const permisos = await tx.permission.findMany({
+          where: { clave: { in: CATALOGO_PERMISOS.map((p) => p.clave) } },
+          select: { id: true },
+        });
+        await tx.rolePermission.createMany({
+          data: permisos.map((p) => ({
+            inquilinoId: tenant.id,
+            rolId: rolAdmin.id,
+            permisoId: p.id,
+            effect: 'PERMITIR' as const,
+          })),
+        });
 
-      return {
-        tenantId: tenant.id,
-        tenantCodigo: tenant.codigo,
-        adminId: admin.id,
-        email: admin.email,
-      };
-    });
+        const membresia = await tx.membership.create({
+          data: {
+            inquilinoId: tenant.id,
+            organizacionId: organizacion.id,
+            identidadUsuarioId: admin.id,
+            estado: 'ACTIVA',
+          },
+          select: { id: true },
+        });
+        await tx.membershipRole.create({
+          data: {
+            inquilinoId: tenant.id,
+            membresiaId: membresia.id,
+            rolId: rolAdmin.id,
+          },
+        });
+
+        return {
+          tenantId: tenant.id,
+          tenantCodigo: tenant.codigo,
+          adminId: admin.id,
+          email: admin.email,
+        };
+      },
+    );
 
     const tokens = await this.auth.emitirTokensParaUsuario({
       identidadUsuarioId: resultado.adminId,
@@ -149,7 +174,7 @@ export class OnboardingService {
     nombre: string,
     fn: (
       tx: Prisma.TransactionClient,
-      tenant: { id: string; codigo: string },
+      tenant: { id: string; codigo: string; nombre: string },
     ) => Promise<T>,
   ): Promise<T> {
     const MAX_INTENTOS = 6;
@@ -159,7 +184,7 @@ export class OnboardingService {
         return await this.prisma.$transaction(async (tx) => {
           const tenant = await tx.tenant.create({
             data: { codigo, nombre },
-            select: { id: true, codigo: true },
+            select: { id: true, codigo: true, nombre: true },
           });
           return fn(tx, tenant);
         });
@@ -174,7 +199,9 @@ export class OnboardingService {
         throw e;
       }
     }
-    throw new ConflictException('No se pudo generar un código de empresa único');
+    throw new ConflictException(
+      'No se pudo generar un código de empresa único',
+    );
   }
 
   /** Picks the first free code of the form base, base-2, base-3, ... */

@@ -14,14 +14,78 @@ interface DefinicionPermiso {
  * upserted on boot so the set of protectable actions is versioned with the app.
  */
 export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
-  { clave: 'usuarios.crear', resource: 'usuarios', action: 'crear', descripcion: 'Invitar/crear usuarios' },
-  { clave: 'usuarios.listar', resource: 'usuarios', action: 'listar', descripcion: 'Listar usuarios' },
-  { clave: 'usuarios.actualizar', resource: 'usuarios', action: 'actualizar', descripcion: 'Actualizar usuarios' },
-  { clave: 'usuarios.desactivar', resource: 'usuarios', action: 'desactivar', descripcion: 'Desactivar usuarios' },
-  { clave: 'roles.crear', resource: 'roles', action: 'crear', descripcion: 'Crear roles' },
-  { clave: 'roles.listar', resource: 'roles', action: 'listar', descripcion: 'Listar roles' },
-  { clave: 'roles.asignar', resource: 'roles', action: 'asignar', descripcion: 'Asignar permisos a roles' },
-  { clave: 'ventas.crear', resource: 'ventas', action: 'crear', descripcion: 'Registrar ventas' },
+  {
+    clave: 'usuarios.crear',
+    resource: 'usuarios',
+    action: 'crear',
+    descripcion: 'Invitar/crear usuarios',
+  },
+  {
+    clave: 'usuarios.listar',
+    resource: 'usuarios',
+    action: 'listar',
+    descripcion: 'Listar usuarios',
+  },
+  {
+    clave: 'usuarios.actualizar',
+    resource: 'usuarios',
+    action: 'actualizar',
+    descripcion: 'Actualizar usuarios',
+  },
+  {
+    clave: 'usuarios.desactivar',
+    resource: 'usuarios',
+    action: 'desactivar',
+    descripcion: 'Desactivar usuarios',
+  },
+  {
+    clave: 'roles.crear',
+    resource: 'roles',
+    action: 'crear',
+    descripcion: 'Crear roles',
+  },
+  {
+    clave: 'roles.listar',
+    resource: 'roles',
+    action: 'listar',
+    descripcion: 'Listar roles',
+  },
+  {
+    clave: 'roles.asignar',
+    resource: 'roles',
+    action: 'asignar',
+    descripcion: 'Asignar permisos a roles',
+  },
+  {
+    clave: 'ventas.crear',
+    resource: 'ventas',
+    action: 'crear',
+    descripcion: 'Registrar ventas',
+  },
+  {
+    clave: 'catalogo.crear',
+    resource: 'catalogo',
+    action: 'crear',
+    descripcion: 'Gestionar catálogo y precios',
+  },
+  {
+    clave: 'catalogo.listar',
+    resource: 'catalogo',
+    action: 'listar',
+    descripcion: 'Consultar catálogo y precios',
+  },
+  {
+    clave: 'inventario.stock_inicial',
+    resource: 'inventario',
+    action: 'stock_inicial',
+    descripcion: 'Registrar apertura de inventario',
+  },
+  {
+    clave: 'caja.abrir',
+    resource: 'caja',
+    action: 'abrir',
+    descripcion: 'Abrir sesión de caja',
+  },
 ];
 
 export const CLAVES_PERMISOS_VALIDAS = new Set(
@@ -46,6 +110,8 @@ export class CatalogoPermisosService implements OnApplicationBootstrap {
         create: permiso,
       });
     }
-    this.logger.log(`Catálogo de permisos sincronizado (${CATALOGO_PERMISOS.length})`);
+    this.logger.log(
+      `Catálogo de permisos sincronizado (${CATALOGO_PERMISOS.length})`,
+    );
   }
 }

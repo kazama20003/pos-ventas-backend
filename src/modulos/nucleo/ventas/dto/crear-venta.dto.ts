@@ -10,7 +10,6 @@ import {
   IsString,
   IsUUID,
   Length,
-  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -24,14 +23,6 @@ export enum MetodoPagoDto {
   OTRO = 'OTRO',
 }
 
-export enum AfectacionImpuestoDto {
-  GRAVADO = 'GRAVADO',
-  EXONERADO = 'EXONERADO',
-  INAFECTO = 'INAFECTO',
-  GRATUITO = 'GRATUITO',
-  EXPORTACION = 'EXPORTACION',
-}
-
 export class ItemVentaDto {
   @IsUUID()
   varianteId!: string;
@@ -39,24 +30,9 @@ export class ItemVentaDto {
   @IsUUID()
   almacenId!: string;
 
-  @IsString()
-  @IsNotEmpty()
-  nombre!: string;
-
-  @IsOptional()
-  @IsString()
-  sku?: string;
-
   /** Positive quantity. Decimals allowed (e.g. weighed goods). */
   @IsPositive()
   cantidad!: number;
-
-  /** Final unit price in the sale currency. */
-  @Min(0)
-  precioUnitario!: number;
-
-  @IsEnum(AfectacionImpuestoDto)
-  afectacionImpuesto!: AfectacionImpuestoDto;
 }
 
 export class PagoVentaDto {
@@ -81,6 +57,10 @@ export class CrearVentaDto {
   /** DocumentSeries used to reserve the correlative sale number. */
   @IsUUID()
   serieId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  sesionCajaId?: string;
 
   @IsOptional()
   @IsUUID()
