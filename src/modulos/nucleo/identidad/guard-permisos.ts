@@ -76,26 +76,25 @@ export class GuardPermisos implements CanActivate {
           ...new Set(memberships.flatMap((m) => m.roles.map((r) => r.rolId))),
         ];
 
-        const [permisosRol, politicas] = await Promise.all([
-          rolIds.length
-            ? tx.rolePermission.findMany({
-                where: {
-                  inquilinoId: usuario.inquilinoId,
-                  rolId: { in: rolIds },
-                  permission: { clave: permisoRequerido },
-                },
-                select: { effect: true },
-              })
-            : Promise.resolve([]),
-          tx.accessPolicy.findMany({
-            where: {
-              inquilinoId: usuario.inquilinoId,
-              membresiaId: { in: membresiaIds },
-              permissionKey: permisoRequerido,
-            },
-            select: { effect: true },
-          }),
-        ]);
+        // Secuencial: comparten una sola conexión pg dentro de la transacción.
+        const permisosRol = rolIds.length
+          ? await tx.rolePermission.findMany({
+              where: {
+                inquilinoId: usuario.inquilinoId,
+                rolId: { in: rolIds },
+                permission: { clave: permisoRequerido },
+              },
+              select: { effect: true },
+            })
+          : [];
+        const politicas = await tx.accessPolicy.findMany({
+          where: {
+            inquilinoId: usuario.inquilinoId,
+            membresiaId: { in: membresiaIds },
+            permissionKey: permisoRequerido,
+          },
+          select: { effect: true },
+        });
 
         return {
           esAdmin: false,

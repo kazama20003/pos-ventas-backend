@@ -472,16 +472,18 @@ export class VentasService {
     });
     const porId = new Map(variantes.map((variante) => [variante.id, variante]));
 
-    return Promise.all(
-      dto.items.map(async (item, indice) => {
-        const variante = porId.get(item.varianteId);
-        if (!variante) {
-          throw new NotFoundException(
-            `Variante no encontrada o inactiva: ${item.varianteId}`,
-          );
-        }
-        const cantidad = new Prisma.Decimal(item.cantidad);
-        const precio = await tx.priceListItem.findFirst({
+    // Secuencial: comparten una sola conexión pg dentro de la transacción;
+    // en paralelo dispararía el DeprecationWarning de pg.
+    const lineas: LineaCalculada[] = [];
+    for (const [indice, item] of dto.items.entries()) {
+      const variante = porId.get(item.varianteId);
+      if (!variante) {
+        throw new NotFoundException(
+          `Variante no encontrada o inactiva: ${item.varianteId}`,
+        );
+      }
+      const cantidad = new Prisma.Decimal(item.cantidad);
+      const precio = await tx.priceListItem.findFirst({
           where: {
             inquilinoId,
             varianteId: variante.id,
@@ -524,7 +526,7 @@ export class VentasService {
         const total = impuestoPrincipal?.includedInPrice
           ? montoBruto
           : montoBruto.add(montoImpuesto);
-        return {
+        lineas.push({
           item,
           lineNumber: indice + 1,
           sku: variante.sku,
@@ -538,9 +540,9 @@ export class VentasService {
           montoBruto,
           montoImpuesto,
           total,
-        };
-      }),
-    );
+        });
+    }
+    return lineas;
   }
 
   private resolverEstado(
@@ -722,38 +724,37 @@ export class VentasService {
         'Una venta en efectivo requiere una sesión de caja',
       );
     }
-    const [empresa, sucursal, cliente, sesion] = await Promise.all([
-      tx.company.findFirst({
-        where: { id: dto.empresaId, inquilinoId, estado: 'ACTIVO' },
-        select: { id: true },
-      }),
-      tx.branch.findFirst({
-        where: {
-          id: dto.sucursalId,
-          empresaId: dto.empresaId,
-          inquilinoId,
-          estado: 'ACTIVO',
-        },
-        select: { id: true },
-      }),
-      dto.clienteId
-        ? tx.customer.findFirst({
-            where: { id: dto.clienteId, inquilinoId, estado: 'ACTIVO' },
-            select: { id: true },
-          })
-        : Promise.resolve(true),
-      dto.sesionCajaId
-        ? tx.cashSession.findFirst({
-            where: {
-              id: dto.sesionCajaId,
-              inquilinoId,
-              sucursalId: dto.sucursalId,
-              estado: 'ABIERTA',
-            },
-            select: { id: true },
-          })
-        : Promise.resolve(true),
-    ]);
+    // Secuencial: comparten una sola conexión pg dentro de la transacción.
+    const empresa = await tx.company.findFirst({
+      where: { id: dto.empresaId, inquilinoId, estado: 'ACTIVO' },
+      select: { id: true },
+    });
+    const sucursal = await tx.branch.findFirst({
+      where: {
+        id: dto.sucursalId,
+        empresaId: dto.empresaId,
+        inquilinoId,
+        estado: 'ACTIVO',
+      },
+      select: { id: true },
+    });
+    const cliente = dto.clienteId
+      ? await tx.customer.findFirst({
+          where: { id: dto.clienteId, inquilinoId, estado: 'ACTIVO' },
+          select: { id: true },
+        })
+      : true;
+    const sesion = dto.sesionCajaId
+      ? await tx.cashSession.findFirst({
+          where: {
+            id: dto.sesionCajaId,
+            inquilinoId,
+            sucursalId: dto.sucursalId,
+            estado: 'ABIERTA',
+          },
+          select: { id: true },
+        })
+      : true;
     if (!empresa || !sucursal || !cliente || !sesion) {
       throw new NotFoundException(
         'Empresa, sucursal, cliente o sesión de caja no válida para la venta',

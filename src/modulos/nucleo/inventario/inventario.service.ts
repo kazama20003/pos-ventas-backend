@@ -29,16 +29,17 @@ export class InventarioService {
       });
       if (existente) return { ...existente, idempotente: true };
 
-      const [almacen, variante] = await Promise.all([
-        tx.warehouse.findFirst({
-          where: { id: dto.almacenId, inquilinoId, estado: 'ACTIVO' },
-          select: { id: true },
-        }),
-        tx.productVariant.findFirst({
-          where: { id: dto.varianteId, inquilinoId, estado: 'ACTIVO' },
-          select: { id: true, isStockTracked: true },
-        }),
-      ]);
+      // Secuencial a propósito: dentro de una transacción interactiva todas las
+      // consultas comparten una sola conexión pg; lanzarlas en paralelo dispara
+      // el DeprecationWarning "client.query() while already executing a query".
+      const almacen = await tx.warehouse.findFirst({
+        where: { id: dto.almacenId, inquilinoId, estado: 'ACTIVO' },
+        select: { id: true },
+      });
+      const variante = await tx.productVariant.findFirst({
+        where: { id: dto.varianteId, inquilinoId, estado: 'ACTIVO' },
+        select: { id: true, isStockTracked: true },
+      });
       if (!almacen)
         throw new NotFoundException('Almacén no encontrado o inactivo');
       if (!variante)
