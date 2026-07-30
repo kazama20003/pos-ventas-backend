@@ -13,6 +13,10 @@ import { PERMISO_KEY } from './decoradores';
  * Authorization guard. Resolves the required permission key against the user's
  * memberships -> roles -> role permissions plus per-membership AccessPolicy
  * overrides. Deny-by-default: an explicit DENEGAR anywhere wins over PERMITIR.
+ *
+ * A system role (isSystem, e.g. the tenant ADMIN created at onboarding) has full
+ * access: it bypasses the per-permission check. Granular permissions still apply
+ * to invited employees with non-system roles.
  */
 @Injectable()
 export class GuardPermisos implements CanActivate {
@@ -38,7 +42,7 @@ export class GuardPermisos implements CanActivate {
       throw new ForbiddenException('No autenticado');
     }
 
-    const efectos = await this.prisma.ejecutarEnTenant(
+    const resultado = await this.prisma.ejecutarEnTenant(
       usuario.inquilinoId,
       async (tx) => {
         const memberships = await tx.membership.findMany({
@@ -47,11 +51,24 @@ export class GuardPermisos implements CanActivate {
             identidadUsuarioId: usuario.identidadUsuarioId,
             estado: 'ACTIVA',
           },
-          select: { id: true, roles: { select: { rolId: true } } },
+          select: {
+            id: true,
+            roles: {
+              select: { rolId: true, role: { select: { isSystem: true } } },
+            },
+          },
         });
 
         if (memberships.length === 0) {
           throw new ForbiddenException('Sin membresía activa');
+        }
+
+        // Rol de sistema (ADMIN del tenant) => acceso total.
+        const esAdmin = memberships.some((m) =>
+          m.roles.some((r) => r.role?.isSystem),
+        );
+        if (esAdmin) {
+          return { esAdmin: true, efectos: [] as string[] };
         }
 
         const membresiaIds = memberships.map((m) => m.id);
@@ -80,14 +97,20 @@ export class GuardPermisos implements CanActivate {
           }),
         ]);
 
-        return [...permisosRol, ...politicas].map((e) => e.effect);
+        return {
+          esAdmin: false,
+          efectos: [...permisosRol, ...politicas].map((e) => e.effect),
+        };
       },
     );
 
-    if (efectos.includes('DENEGAR')) {
+    if (resultado.esAdmin) {
+      return true;
+    }
+    if (resultado.efectos.includes('DENEGAR')) {
       throw new ForbiddenException(`Permiso denegado: ${permisoRequerido}`);
     }
-    if (efectos.includes('PERMITIR')) {
+    if (resultado.efectos.includes('PERMITIR')) {
       return true;
     }
 
