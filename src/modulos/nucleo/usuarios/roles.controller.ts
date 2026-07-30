@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+} from '@nestjs/common';
 import { RequierePermiso } from '../identidad/decoradores';
 import { AsignarPermisosDto, CrearRolDto } from './dto/roles.dto';
 import { RolesService } from './roles.service';

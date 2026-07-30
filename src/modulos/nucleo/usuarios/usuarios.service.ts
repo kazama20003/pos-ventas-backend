@@ -6,6 +6,7 @@ import {
 import { Prisma } from '../../../../generado/operaciones/client';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import { ContextoSolicitudService } from '../../../compartido/contexto/contexto-solicitud.service';
+import { GatingService } from '../../administracion/suscripciones/gating.service';
 import { PREFIJO_INVITACION } from '../identidad/autenticacion.service';
 import {
   ActualizarUsuarioDto,
@@ -18,6 +19,7 @@ export class UsuariosService {
   constructor(
     private readonly prisma: CorePrismaService,
     private readonly contexto: ContextoSolicitudService,
+    private readonly gating: GatingService,
   ) {}
 
   /**
@@ -28,6 +30,17 @@ export class UsuariosService {
   async crear(dto: CrearUsuarioDto) {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
     const email = dto.email.toLowerCase();
+
+    // Gating por plan: si está activo, no permite exceder el máximo de usuarios
+    // del plan contratado. Cuenta las membresías no revocadas como uso actual.
+    const usuariosActivos = await this.prisma.ejecutarEnTenant(
+      inquilinoId,
+      (tx) =>
+        tx.membership.count({
+          where: { inquilinoId, estado: { not: 'REVOCADA' } },
+        }),
+    );
+    await this.gating.exigir('usuarios_max', usuariosActivos);
 
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       const organizacion = await tx.organization.findFirst({
@@ -100,7 +113,12 @@ export class UsuariosService {
           id: true,
           estado: true,
           userIdentity: {
-            select: { id: true, email: true, nombreVisible: true, sujetoExterno: true },
+            select: {
+              id: true,
+              email: true,
+              nombreVisible: true,
+              sujetoExterno: true,
+            },
           },
           roles: { select: { role: { select: { id: true, codigo: true } } } },
         },
@@ -112,7 +130,8 @@ export class UsuariosService {
         identidadUsuarioId: m.userIdentity.id,
         email: m.userIdentity.email,
         nombreVisible: m.userIdentity.nombreVisible,
-        vinculadoAGoogle: !m.userIdentity.sujetoExterno.startsWith(PREFIJO_INVITACION),
+        vinculadoAGoogle:
+          !m.userIdentity.sujetoExterno.startsWith(PREFIJO_INVITACION),
         roles: m.roles.map((r) => ({ id: r.role.id, codigo: r.role.codigo })),
       }));
     });
@@ -138,9 +157,15 @@ export class UsuariosService {
 
       if (dto.rolIds) {
         await this.validarRoles(tx, inquilinoId, dto.rolIds);
-        await tx.membershipRole.deleteMany({ where: { inquilinoId, membresiaId } });
+        await tx.membershipRole.deleteMany({
+          where: { inquilinoId, membresiaId },
+        });
         await tx.membershipRole.createMany({
-          data: dto.rolIds.map((rolId) => ({ inquilinoId, membresiaId, rolId })),
+          data: dto.rolIds.map((rolId) => ({
+            inquilinoId,
+            membresiaId,
+            rolId,
+          })),
         });
       }
 
@@ -179,7 +204,9 @@ export class UsuariosService {
       select: { id: true },
     });
     if (encontrados.length !== rolIds.length) {
-      throw new BadRequestException('Uno o más roles no existen en este tenant');
+      throw new BadRequestException(
+        'Uno o más roles no existen en este tenant',
+      );
     }
   }
 }

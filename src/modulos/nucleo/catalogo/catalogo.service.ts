@@ -6,6 +6,7 @@ import {
 import { Prisma } from '../../../../generado/operaciones/client';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import { ContextoSolicitudService } from '../../../compartido/contexto/contexto-solicitud.service';
+import { GatingService } from '../../administracion/suscripciones/gating.service';
 import {
   CrearCategoriaDto,
   CrearImpuestoDto,
@@ -19,6 +20,7 @@ export class CatalogoService {
   constructor(
     private readonly prisma: CorePrismaService,
     private readonly contexto: ContextoSolicitudService,
+    private readonly gating: GatingService,
   ) {}
 
   async crearCategoria(dto: CrearCategoriaDto) {
@@ -74,6 +76,13 @@ export class CatalogoService {
 
   async crearProducto(dto: CrearProductoDto) {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
+
+    // Gating por plan (si está activo): no exceder el máximo de productos.
+    const productos = await this.prisma.ejecutarEnTenant(inquilinoId, (tx) =>
+      tx.product.count({ where: { inquilinoId } }),
+    );
+    await this.gating.exigir('productos_max', productos);
+
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       await this.exigirReferenciasProducto(tx, inquilinoId, dto);
       return tx.product.create({

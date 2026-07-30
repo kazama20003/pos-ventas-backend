@@ -7,6 +7,18 @@ import { Prisma } from '../../../../generado/operaciones/client';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import { ContextoSolicitudService } from '../../../compartido/contexto/contexto-solicitud.service';
 import { AbrirCajaDto } from './dto/abrir-caja.dto';
+import { CerrarCajaDto } from './dto/cerrar-caja.dto';
+
+/** Signo de cada tipo de movimiento sobre el efectivo esperado en caja. */
+const SIGNO_MOVIMIENTO: Record<string, number> = {
+  FONDO_APERTURA: 1,
+  VENTA_EFECTIVO: 1,
+  INGRESO_EFECTIVO: 1,
+  DEVOLUCION_EFECTIVO: -1,
+  EGRESO_EFECTIVO: -1,
+  RETIRO: -1,
+  AJUSTE_CIERRE: 1,
+};
 
 @Injectable()
 export class CajaService {
@@ -63,5 +75,127 @@ export class CajaService {
         throw error;
       }
     });
+  }
+
+  /** Efectivo esperado en una sesión = suma firmada de sus movimientos. */
+  async resumen(sesionCajaId: string) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const sesion = await tx.cashSession.findFirst({
+        where: { id: sesionCajaId, inquilinoId },
+        select: {
+          id: true,
+          estado: true,
+          openingAmount: true,
+          abiertoEn: true,
+        },
+      });
+      if (!sesion) throw new NotFoundException('Sesión de caja no encontrada');
+      const esperado = await this.calcularEsperado(
+        tx,
+        inquilinoId,
+        sesionCajaId,
+      );
+      return {
+        id: sesion.id,
+        estado: sesion.estado,
+        abiertoEn: sesion.abiertoEn,
+        montoApertura: sesion.openingAmount.toFixed(2),
+        efectivoEsperado: esperado.toFixed(2),
+      };
+    });
+  }
+
+  /**
+   * Cierra y concilia una sesión de caja: calcula el efectivo esperado, lo
+   * compara con lo declarado, guarda el arqueo por denominación y crea la
+   * conciliación con la diferencia (sobrante/faltante).
+   */
+  async cerrar(dto: CerrarCajaDto) {
+    const { inquilinoId, identidadUsuarioId } =
+      this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const filas = await tx.$queryRaw<{ estado: string }[]>`
+        SELECT "estado" FROM "CashSession"
+        WHERE "id" = ${dto.sesionCajaId}::uuid AND "inquilinoId" = ${inquilinoId}::uuid
+        FOR UPDATE`;
+      if (filas.length === 0) {
+        throw new NotFoundException('Sesión de caja no encontrada');
+      }
+      if (filas[0].estado !== 'ABIERTA') {
+        throw new ConflictException(
+          `La sesión no está abierta (estado ${filas[0].estado})`,
+        );
+      }
+
+      const esperado = await this.calcularEsperado(
+        tx,
+        inquilinoId,
+        dto.sesionCajaId,
+      );
+      const declarado = new Prisma.Decimal(dto.montoDeclarado);
+      const diferencia = declarado.sub(esperado);
+
+      for (const conteo of dto.conteos ?? []) {
+        const denom = new Prisma.Decimal(conteo.denominacion);
+        await tx.cashCount.create({
+          data: {
+            inquilinoId,
+            sesionCajaId: dto.sesionCajaId,
+            denomination: denom,
+            cantidad: conteo.cantidad,
+            total: denom.mul(conteo.cantidad),
+            contadoPorId: identidadUsuarioId,
+          },
+        });
+      }
+
+      await tx.cashSession.update({
+        where: { id: dto.sesionCajaId },
+        data: {
+          estado: 'CONCILIADA',
+          cerradoPorId: identidadUsuarioId,
+          expectedAmount: esperado,
+          declaredAmount: declarado,
+          differenceAmount: diferencia,
+          cerradoEn: new Date(),
+        },
+      });
+
+      await tx.cashReconciliation.create({
+        data: {
+          inquilinoId,
+          sesionCajaId: dto.sesionCajaId,
+          expectedAmount: esperado,
+          declaredAmount: declarado,
+          differenceAmount: diferencia,
+          motivo: dto.motivo ?? null,
+          reconciledById: identidadUsuarioId,
+        },
+      });
+
+      return {
+        id: dto.sesionCajaId,
+        estado: 'CONCILIADA' as const,
+        efectivoEsperado: esperado.toFixed(2),
+        montoDeclarado: declarado.toFixed(2),
+        diferencia: diferencia.toFixed(2),
+      };
+    });
+  }
+
+  private async calcularEsperado(
+    tx: Prisma.TransactionClient,
+    inquilinoId: string,
+    sesionCajaId: string,
+  ): Promise<Prisma.Decimal> {
+    const movimientos = await tx.cashMovement.findMany({
+      where: { inquilinoId, sesionCajaId },
+      select: { tipo: true, monto: true },
+    });
+    return movimientos.reduce(
+      (acc, m) => acc.add(m.monto.mul(SIGNO_MOVIMIENTO[m.tipo] ?? 0)),
+      new Prisma.Decimal(0),
+    );
   }
 }

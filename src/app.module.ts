@@ -6,6 +6,7 @@ import { CoreContextsModule } from './modulos/nucleo/contextos-nucleo.module';
 import { ManagementContextsModule } from './modulos/administracion/contextos-administracion.module';
 import { AppConfigModule } from './compartido/configuracion/configuracion-aplicacion.module';
 import { ContextoModule } from './compartido/contexto/contexto.module';
+import { SeguridadModule } from './compartido/seguridad/seguridad.module';
 import { CoreDatabaseModule } from './compartido/base-datos/base-datos-operaciones.module';
 import { ManagementDatabaseModule } from './compartido/base-datos/base-datos-administracion.module';
 import { GuardJwt } from './modulos/nucleo/identidad/guard-jwt';
@@ -16,6 +17,7 @@ import { InterceptorContexto } from './modulos/nucleo/identidad/interceptor-cont
   imports: [
     AppConfigModule,
     ContextoModule,
+    SeguridadModule,
     CoreDatabaseModule,
     ManagementDatabaseModule,
     CoreContextsModule,

@@ -11,6 +11,8 @@ import {
   ItemVentaDto,
   MetodoPagoDto,
 } from './dto/crear-venta.dto';
+import { CrearDevolucionDto } from './dto/crear-devolucion.dto';
+import { SincronizarVentasDto } from './dto/sincronizar-ventas.dto';
 
 type TxPrisma = Prisma.TransactionClient;
 
@@ -162,6 +164,21 @@ export class VentasService {
         }
       }
 
+      // Venta a crédito: el saldo no pagado de un cliente identificado se
+      // convierte en una cuenta por cobrar con su cuota (vencimiento según la
+      // línea de crédito del cliente, o 30 días por defecto).
+      if (dto.clienteId) {
+        await this.generarCuentaPorCobrar(
+          tx,
+          inquilinoId,
+          venta.id,
+          dto.clienteId,
+          dto.moneda,
+          total,
+          totalPagado,
+        );
+      }
+
       return {
         id: venta.id,
         number: correlativo.numeroFormateado,
@@ -171,6 +188,264 @@ export class VentasService {
         totalPagado: totalPagado.toFixed(2),
         idempotente: false,
       };
+    });
+  }
+
+  /** Crea la cuenta por cobrar por el saldo pendiente de una venta a crédito. */
+  private async generarCuentaPorCobrar(
+    tx: TxPrisma,
+    inquilinoId: string,
+    ventaId: string,
+    clienteId: string,
+    moneda: string,
+    total: Prisma.Decimal,
+    totalPagado: Prisma.Decimal,
+  ): Promise<void> {
+    const saldo = total.sub(totalPagado);
+    if (saldo.lte(0)) return;
+
+    const cuenta = await tx.customerCreditAccount.findFirst({
+      where: { inquilinoId, clienteId, moneda },
+      select: { paymentTermDays: true },
+    });
+    const dias = cuenta?.paymentTermDays ?? 30;
+    const emitidoEn = new Date();
+    const venceEn = new Date(emitidoEn.getTime() + dias * 24 * 60 * 60 * 1000);
+
+    await tx.accountsReceivable.create({
+      data: {
+        inquilinoId,
+        clienteId,
+        ventaId,
+        moneda,
+        montoOriginal: saldo,
+        montoPendiente: saldo,
+        emitidoEn,
+        venceEn,
+        cuotas: {
+          create: [
+            {
+              inquilinoId,
+              installmentNo: 1,
+              venceEn,
+              monto: saldo,
+              montoPendiente: saldo,
+            },
+          ],
+        },
+      },
+    });
+  }
+
+  /**
+   * Sincroniza un lote de ventas creadas offline. Cada venta se procesa aparte
+   * (idempotente por idempotencyKey); un fallo individual no aborta el lote.
+   */
+  async sincronizar(dto: SincronizarVentasDto) {
+    const resultados: Array<Record<string, unknown>> = [];
+    for (const venta of dto.ventas) {
+      try {
+        const creada = await this.crear(venta);
+        resultados.push({
+          idempotencyKey: venta.idempotencyKey,
+          offlineId: venta.offlineId ?? null,
+          ok: true,
+          ...creada,
+        });
+      } catch (error) {
+        resultados.push({
+          idempotencyKey: venta.idempotencyKey,
+          offlineId: venta.offlineId ?? null,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return {
+      total: dto.ventas.length,
+      sincronizadas: resultados.filter((r) => r.ok).length,
+      fallidas: resultados.filter((r) => !r.ok).length,
+      resultados,
+    };
+  }
+
+  /**
+   * Registra una devolución (total o parcial) de una venta: reingresa el stock
+   * de las líneas marcadas `restock` (ledger DEVOLUCION_VENTA) y, opcionalmente,
+   * devuelve efectivo desde la caja. Idempotente por idempotencyKey.
+   */
+  async devolver(dto: CrearDevolucionDto) {
+    const { inquilinoId, identidadUsuarioId } =
+      this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const existente = await tx.saleRefund.findFirst({
+        where: { inquilinoId, idempotencyKey: dto.idempotencyKey },
+        select: { id: true, number: true, estado: true },
+      });
+      if (existente) return { ...existente, idempotente: true };
+
+      const venta = await tx.sale.findFirst({
+        where: { id: dto.ventaId, inquilinoId },
+        select: { id: true, estado: true, moneda: true },
+      });
+      if (!venta) throw new NotFoundException('Venta no encontrada');
+      if (venta.estado === 'ANULADA') {
+        throw new ConflictException('No se puede devolver una venta anulada');
+      }
+
+      const saleItems = await tx.saleItem.findMany({
+        where: {
+          inquilinoId,
+          ventaId: dto.ventaId,
+          id: { in: dto.items.map((i) => i.itemVentaId) },
+        },
+        include: { variant: { select: { isStockTracked: true } } },
+      });
+      const porId = new Map(saleItems.map((si) => [si.id, si]));
+
+      let subtotal = new Prisma.Decimal(0);
+      let totalImpuesto = new Prisma.Decimal(0);
+      let total = new Prisma.Decimal(0);
+      const lineas = dto.items.map((item) => {
+        const si = porId.get(item.itemVentaId);
+        if (!si) {
+          throw new NotFoundException(
+            `Línea de venta no encontrada: ${item.itemVentaId}`,
+          );
+        }
+        const cantidad = new Prisma.Decimal(item.cantidad);
+        if (cantidad.gt(si.cantidad)) {
+          throw new ConflictException(
+            `La cantidad devuelta supera la vendida en la línea ${si.lineNumber}`,
+          );
+        }
+        const factor = cantidad.div(si.cantidad);
+        const lineTotal = si.total.mul(factor).toDP(2);
+        const lineImpuesto = si.montoImpuesto.mul(factor).toDP(2);
+        subtotal = subtotal.add(lineTotal.sub(lineImpuesto));
+        totalImpuesto = totalImpuesto.add(lineImpuesto);
+        total = total.add(lineTotal);
+        return { item, si, cantidad, lineImpuesto, lineTotal };
+      });
+
+      const refund = await tx.saleRefund.create({
+        data: {
+          inquilinoId,
+          ventaId: dto.ventaId,
+          number: dto.number,
+          idempotencyKey: dto.idempotencyKey,
+          estado: 'COMPLETADA',
+          motivo: dto.motivo,
+          subtotal,
+          totalImpuesto,
+          total,
+          solicitadoPorId: identidadUsuarioId,
+          completadoEn: new Date(),
+        },
+        select: { id: true, number: true, estado: true },
+      });
+
+      for (const l of lineas) {
+        const restock = l.item.restock ?? true;
+        await tx.saleRefundItem.create({
+          data: {
+            inquilinoId,
+            devolucionVentaId: refund.id,
+            ventaId: dto.ventaId,
+            itemVentaId: l.si.id,
+            cantidad: l.cantidad,
+            unitAmount: l.si.precioUnitario,
+            montoImpuesto: l.lineImpuesto,
+            total: l.lineTotal,
+            restock,
+          },
+        });
+        if (restock && l.si.variant?.isStockTracked && l.si.varianteId) {
+          await this.reingresarStock(
+            tx,
+            inquilinoId,
+            l.item.almacenId,
+            refund.id,
+            l.si.varianteId,
+            l.cantidad,
+          );
+        }
+      }
+
+      if (dto.devolverEfectivo && dto.sesionCajaId) {
+        await tx.cashMovement.create({
+          data: {
+            inquilinoId,
+            sesionCajaId: dto.sesionCajaId,
+            idempotencyKey: `${dto.idempotencyKey}:caja`,
+            tipo: 'DEVOLUCION_EFECTIVO',
+            monto: total,
+            moneda: venta.moneda,
+            referenciaType: 'DEVOLUCION_VENTA',
+            referenciaId: refund.id,
+            actorId: identidadUsuarioId,
+          },
+        });
+      }
+
+      return { ...refund, total: total.toFixed(2), idempotente: false };
+    });
+  }
+
+  /** Reingresa stock por una devolución: bloquea el balance y contabiliza. */
+  private async reingresarStock(
+    tx: TxPrisma,
+    inquilinoId: string,
+    almacenId: string,
+    refundId: string,
+    varianteId: string,
+    cantidad: Prisma.Decimal,
+  ): Promise<void> {
+    const balances = await tx.$queryRaw<
+      { id: string; costoPromedio: Prisma.Decimal }[]
+    >`SELECT "id", "costoPromedio" FROM "StockBalance"
+      WHERE "inquilinoId" = ${inquilinoId}::uuid
+        AND "almacenId" = ${almacenId}::uuid
+        AND "varianteId" = ${varianteId}::uuid
+      FOR UPDATE`;
+
+    let costo = new Prisma.Decimal(0);
+    if (balances.length === 0) {
+      await tx.stockBalance.create({
+        data: {
+          inquilinoId,
+          almacenId,
+          varianteId,
+          enStock: cantidad,
+          available: cantidad,
+        },
+      });
+    } else {
+      costo = new Prisma.Decimal(balances[0].costoPromedio);
+      await tx.stockBalance.update({
+        where: { id: balances[0].id },
+        data: {
+          enStock: { increment: cantidad },
+          available: { increment: cantidad },
+          version: { increment: 1 },
+        },
+      });
+    }
+
+    await tx.inventoryLedgerEntry.create({
+      data: {
+        inquilinoId,
+        almacenId,
+        varianteId,
+        movementType: 'DEVOLUCION_VENTA',
+        cantidad,
+        costoUnitario: costo,
+        totalCost: costo.mul(cantidad),
+        referenciaType: 'DEVOLUCION_VENTA',
+        referenciaId: refundId,
+        idempotencyKey: `${refundId}:${almacenId}:${varianteId}`,
+        occurredAt: new Date(),
+      },
     });
   }
 
