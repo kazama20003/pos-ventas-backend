@@ -81,10 +81,46 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
     descripcion: 'Consultar catálogo y precios',
   },
   {
+    clave: 'catalogo.editar',
+    resource: 'catalogo',
+    action: 'editar',
+    descripcion: 'Editar productos y catálogo',
+  },
+  {
+    clave: 'catalogo.eliminar',
+    resource: 'catalogo',
+    action: 'eliminar',
+    descripcion: 'Archivar productos del catálogo',
+  },
+  {
     clave: 'inventario.stock_inicial',
     resource: 'inventario',
     action: 'stock_inicial',
     descripcion: 'Registrar apertura de inventario',
+  },
+  {
+    clave: 'archivos.subir',
+    resource: 'archivos',
+    action: 'subir',
+    descripcion: 'Subir imágenes y archivos',
+  },
+  {
+    clave: 'inventario.ajustar',
+    resource: 'inventario',
+    action: 'ajustar',
+    descripcion: 'Ajustar stock (entradas, salidas, mermas)',
+  },
+  {
+    clave: 'inventario.listar',
+    resource: 'inventario',
+    action: 'listar',
+    descripcion: 'Consultar stock y kardex',
+  },
+  {
+    clave: 'inventario.transferir',
+    resource: 'inventario',
+    action: 'transferir',
+    descripcion: 'Crear y recibir transferencias entre almacenes',
   },
   {
     clave: 'caja.abrir',
@@ -199,7 +235,8 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
     clave: 'suscripcion.gestionar',
     resource: 'suscripcion',
     action: 'gestionar',
-    descripcion: 'Suscribir, cambiar plan, cancelar y pagar facturas del tenant',
+    descripcion:
+      'Suscribir, cambiar plan, cancelar y pagar facturas del tenant',
   },
   {
     clave: 'uso.registrar',

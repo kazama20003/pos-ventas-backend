@@ -16,9 +16,13 @@ export class ItemDevolucionDto {
   @IsUUID()
   itemVentaId!: string;
 
-  /** Warehouse the stock returns to (required if restock). */
+  /**
+   * Almacén al que regresa el stock (si restock). Opcional: si se omite, se usa
+   * el almacén predeterminado de la sucursal de la venta.
+   */
+  @IsOptional()
   @IsUUID()
-  almacenId!: string;
+  almacenId?: string;
 
   @IsPositive()
   cantidad!: number;

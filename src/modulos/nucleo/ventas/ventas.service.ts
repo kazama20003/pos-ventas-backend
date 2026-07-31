@@ -6,6 +6,7 @@ import {
 import { Prisma } from '../../../../generado/operaciones/client';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import { ContextoSolicitudService } from '../../../compartido/contexto/contexto-solicitud.service';
+import { AutorizacionSucursalService } from '../identidad/autorizacion-sucursal.service';
 import {
   CrearVentaDto,
   ItemVentaDto,
@@ -22,6 +23,8 @@ interface CorrelativoReservado {
 
 interface LineaCalculada {
   item: ItemVentaDto;
+  /** Almacén resuelto (línea o predeterminado de la sucursal). */
+  almacenId: string;
   lineNumber: number;
   sku: string;
   nombre: string;
@@ -42,11 +45,14 @@ export class VentasService {
   constructor(
     private readonly prisma: CorePrismaService,
     private readonly contexto: ContextoSolicitudService,
+    private readonly autorizacion: AutorizacionSucursalService,
   ) {}
 
   async crear(dto: CrearVentaDto) {
     const { inquilinoId, identidadUsuarioId } =
       this.contexto.obtenerObligatorio();
+    // Alcance por sucursal: solo puede vender en sucursales permitidas.
+    await this.autorizacion.exigirEnSucursal('ventas.crear', dto.sucursalId);
 
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       // Idempotency: a retry with the same key returns the original sale
@@ -286,12 +292,17 @@ export class VentasService {
 
       const venta = await tx.sale.findFirst({
         where: { id: dto.ventaId, inquilinoId },
-        select: { id: true, estado: true, moneda: true },
+        select: { id: true, estado: true, moneda: true, sucursalId: true },
       });
       if (!venta) throw new NotFoundException('Venta no encontrada');
       if (venta.estado === 'ANULADA') {
         throw new ConflictException('No se puede devolver una venta anulada');
       }
+      const almacenDefault = await this.almacenPredeterminado(
+        tx,
+        inquilinoId,
+        venta.sucursalId,
+      );
 
       const saleItems = await tx.saleItem.findMany({
         where: {
@@ -361,10 +372,16 @@ export class VentasService {
           },
         });
         if (restock && l.si.variant?.isStockTracked && l.si.varianteId) {
+          const almacenId = l.item.almacenId ?? almacenDefault;
+          if (!almacenId) {
+            throw new ConflictException(
+              'Falta almacén para reingresar el stock: la sucursal no tiene almacén predeterminado',
+            );
+          }
           await this.reingresarStock(
             tx,
             inquilinoId,
-            l.item.almacenId,
+            almacenId,
             refund.id,
             l.si.varianteId,
             l.cantidad,
@@ -449,11 +466,35 @@ export class VentasService {
     });
   }
 
+  /** Almacén predeterminado ACTIVO de una sucursal (o null si no hay). */
+  private async almacenPredeterminado(
+    tx: TxPrisma,
+    inquilinoId: string,
+    sucursalId: string,
+  ): Promise<string | null> {
+    const w = await tx.warehouse.findFirst({
+      where: {
+        inquilinoId,
+        sucursalId,
+        esPredeterminado: true,
+        estado: 'ACTIVO',
+      },
+      select: { id: true },
+    });
+    return w?.id ?? null;
+  }
+
   private async calcularLineas(
     tx: TxPrisma,
     inquilinoId: string,
     dto: CrearVentaDto,
   ): Promise<LineaCalculada[]> {
+    // Almacén por defecto de la sucursal (relleno cuando la línea no lo trae).
+    const almacenDefault = await this.almacenPredeterminado(
+      tx,
+      inquilinoId,
+      dto.sucursalId,
+    );
     const variantes = await tx.productVariant.findMany({
       where: {
         inquilinoId,
@@ -482,65 +523,76 @@ export class VentasService {
           `Variante no encontrada o inactiva: ${item.varianteId}`,
         );
       }
-      const cantidad = new Prisma.Decimal(item.cantidad);
-      const precio = await tx.priceListItem.findFirst({
-          where: {
-            inquilinoId,
-            varianteId: variante.id,
-            minQuantity: { lte: cantidad },
-            AND: [
-              { OR: [{ iniciaEn: null }, { iniciaEn: { lte: new Date() } }] },
-              { OR: [{ terminaEn: null }, { terminaEn: { gt: new Date() } }] },
-            ],
-            priceList: {
-              inquilinoId,
-              empresaId: dto.empresaId,
-              moneda: dto.moneda,
-              estado: 'ACTIVO',
-              isDefault: true,
-              AND: [
-                { OR: [{ iniciaEn: null }, { iniciaEn: { lte: new Date() } }] },
-                {
-                  OR: [{ terminaEn: null }, { terminaEn: { gt: new Date() } }],
-                },
-              ],
-            },
-          },
-          orderBy: { minQuantity: 'desc' },
-          select: { monto: true },
-        });
-        if (!precio) {
+      // Solo las variantes con stock necesitan almacén; resolver línea o default.
+      let almacenId = '';
+      if (variante.isStockTracked) {
+        almacenId = item.almacenId ?? almacenDefault ?? '';
+        if (!almacenId) {
           throw new ConflictException(
-            `No existe un precio vigente para ${variante.sku}`,
+            `Falta almacén para ${variante.sku}: la sucursal no tiene almacén predeterminado`,
           );
         }
-        const precioUnitario = precio.monto;
-        const montoBruto = cantidad.mul(precioUnitario);
-        const impuestoPrincipal = variante.taxes[0]?.tax;
-        const tasa = impuestoPrincipal
-          ? impuestoPrincipal.rate
-          : new Prisma.Decimal(0);
-        const montoImpuesto = impuestoPrincipal?.includedInPrice
-          ? montoBruto.mul(tasa).div(new Prisma.Decimal(100).add(tasa))
-          : montoBruto.mul(tasa).div(100);
-        const total = impuestoPrincipal?.includedInPrice
-          ? montoBruto
-          : montoBruto.add(montoImpuesto);
-        lineas.push({
-          item,
-          lineNumber: indice + 1,
-          sku: variante.sku,
-          nombre: variante.nombre,
-          unidad: variante.unitOfMeasure.sunatCode,
-          afectacionImpuesto: impuestoPrincipal?.affectation ?? 'INAFECTO',
-          isStockTracked: variante.isStockTracked,
-          allowNegativeStock: variante.allowNegativeStock,
-          cantidad,
-          precioUnitario,
-          montoBruto,
-          montoImpuesto,
-          total,
-        });
+      }
+      const cantidad = new Prisma.Decimal(item.cantidad);
+      const precio = await tx.priceListItem.findFirst({
+        where: {
+          inquilinoId,
+          varianteId: variante.id,
+          minQuantity: { lte: cantidad },
+          AND: [
+            { OR: [{ iniciaEn: null }, { iniciaEn: { lte: new Date() } }] },
+            { OR: [{ terminaEn: null }, { terminaEn: { gt: new Date() } }] },
+          ],
+          priceList: {
+            inquilinoId,
+            empresaId: dto.empresaId,
+            moneda: dto.moneda,
+            estado: 'ACTIVO',
+            isDefault: true,
+            AND: [
+              { OR: [{ iniciaEn: null }, { iniciaEn: { lte: new Date() } }] },
+              {
+                OR: [{ terminaEn: null }, { terminaEn: { gt: new Date() } }],
+              },
+            ],
+          },
+        },
+        orderBy: { minQuantity: 'desc' },
+        select: { monto: true },
+      });
+      if (!precio) {
+        throw new ConflictException(
+          `No existe un precio vigente para ${variante.sku}`,
+        );
+      }
+      const precioUnitario = precio.monto;
+      const montoBruto = cantidad.mul(precioUnitario);
+      const impuestoPrincipal = variante.taxes[0]?.tax;
+      const tasa = impuestoPrincipal
+        ? impuestoPrincipal.rate
+        : new Prisma.Decimal(0);
+      const montoImpuesto = impuestoPrincipal?.includedInPrice
+        ? montoBruto.mul(tasa).div(new Prisma.Decimal(100).add(tasa))
+        : montoBruto.mul(tasa).div(100);
+      const total = impuestoPrincipal?.includedInPrice
+        ? montoBruto
+        : montoBruto.add(montoImpuesto);
+      lineas.push({
+        item,
+        almacenId,
+        lineNumber: indice + 1,
+        sku: variante.sku,
+        nombre: variante.nombre,
+        unidad: variante.unitOfMeasure.sunatCode,
+        afectacionImpuesto: impuestoPrincipal?.affectation ?? 'INAFECTO',
+        isStockTracked: variante.isStockTracked,
+        allowNegativeStock: variante.allowNegativeStock,
+        cantidad,
+        precioUnitario,
+        montoBruto,
+        montoImpuesto,
+        total,
+      });
     }
     return lineas;
   }
@@ -619,6 +671,8 @@ export class VentasService {
 
     if (!linea.isStockTracked) return;
 
+    const almacenId = linea.almacenId;
+
     // Lock the stock row, verify availability, then decrement with an
     // optimistic version bump. The FOR UPDATE lock serializes concurrent
     // sales of the same variant/warehouse.
@@ -631,13 +685,13 @@ export class VentasService {
       }[]
     >`SELECT "id", "available", "version", "costoPromedio" FROM "StockBalance"
       WHERE "inquilinoId" = ${inquilinoId}::uuid
-        AND "almacenId" = ${item.almacenId}::uuid
+        AND "almacenId" = ${almacenId}::uuid
         AND "varianteId" = ${item.varianteId}::uuid
       FOR UPDATE`;
 
     if (balances.length === 0 && !linea.allowNegativeStock) {
       throw new ConflictException(
-        `Sin stock registrado para la variante ${item.varianteId} en el almacén ${item.almacenId}`,
+        `Sin stock registrado para la variante ${item.varianteId} en el almacén ${almacenId}`,
       );
     }
 
@@ -645,7 +699,7 @@ export class VentasService {
       await tx.stockBalance.create({
         data: {
           inquilinoId,
-          almacenId: item.almacenId,
+          almacenId,
           varianteId: item.varianteId,
           enStock: linea.cantidad.negated(),
           available: linea.cantidad.negated(),
@@ -696,7 +750,7 @@ export class VentasService {
     await tx.inventoryLedgerEntry.create({
       data: {
         inquilinoId,
-        almacenId: linea.item.almacenId,
+        almacenId: linea.almacenId,
         varianteId: linea.item.varianteId,
         movementType: 'VENTA',
         // Outbound movement stored negative so the ledger sums to on-hand.
@@ -705,7 +759,7 @@ export class VentasService {
         totalCost: costoUnitario.mul(linea.cantidad).negated(),
         referenciaType: 'VENTA',
         referenciaId: ventaId,
-        idempotencyKey: `${ventaId}:${linea.item.almacenId}:${linea.item.varianteId}:${linea.lineNumber}`,
+        idempotencyKey: `${ventaId}:${linea.almacenId}:${linea.item.varianteId}:${linea.lineNumber}`,
         occurredAt: new Date(),
       },
     });

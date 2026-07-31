@@ -31,6 +31,18 @@ export class UsuariosController {
     return this.usuarios.listar();
   }
 
+  /** Sucursales donde el usuario autenticado puede operar (para la UI). */
+  @Get('mis-sucursales')
+  misSucursales() {
+    return this.usuarios.misSucursales();
+  }
+
+  /** Dato de referencia (id + nombre) usado por varias pantallas de admin. */
+  @Get('organizaciones')
+  listarOrganizaciones() {
+    return this.usuarios.listarOrganizaciones();
+  }
+
   @RequierePermiso('usuarios.actualizar')
   @Patch(':membresiaId')
   actualizar(

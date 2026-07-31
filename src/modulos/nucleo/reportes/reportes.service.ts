@@ -22,7 +22,7 @@ export class ReportesService {
   ) {}
 
   /** Totales de venta y ticket promedio en un rango (excluye anuladas). */
-  async ventasResumen(rango: RangoFechas) {
+  async ventasResumen(rango: RangoFechas, sucursalId?: string) {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       const filas = await tx.$queryRaw<
@@ -31,7 +31,8 @@ export class ReportesService {
         FROM "Sale"
         WHERE "inquilinoId" = ${inquilinoId}::uuid
           AND "estado" NOT IN ('ANULADA', 'BORRADOR')
-          AND "creadoEn" >= ${rango.desde} AND "creadoEn" < ${rango.hasta}`;
+          AND "creadoEn" >= ${rango.desde} AND "creadoEn" < ${rango.hasta}
+          ${sucursalId ? Prisma.sql`AND "sucursalId" = ${sucursalId}::uuid` : Prisma.empty}`;
       const fila = filas[0];
       const cantidad = Number(fila.cantidad);
       const total = new Prisma.Decimal(fila.total ?? 0);
@@ -44,7 +45,7 @@ export class ReportesService {
   }
 
   /** Serie diaria de ventas para gráfico de barras. */
-  async ventasPorDia(rango: RangoFechas) {
+  async ventasPorDia(rango: RangoFechas, sucursalId?: string) {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
     return this.prisma.ejecutarEnTenant(
       inquilinoId,
@@ -56,12 +57,140 @@ export class ReportesService {
         WHERE "inquilinoId" = ${inquilinoId}::uuid
           AND "estado" NOT IN ('ANULADA', 'BORRADOR')
           AND "creadoEn" >= ${rango.desde} AND "creadoEn" < ${rango.hasta}
+          ${sucursalId ? Prisma.sql`AND "sucursalId" = ${sucursalId}::uuid` : Prisma.empty}
         GROUP BY 1 ORDER BY 1 ASC`,
     );
   }
 
+  /**
+   * Ventas agregadas por sucursal en el rango (total, nº de ventas, ticket
+   * promedio). Es el reporte comparativo multi-local.
+   */
+  async ventasPorSucursal(rango: RangoFechas) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const filas = await tx.$queryRaw<
+        {
+          sucursalId: string;
+          sucursal: string;
+          codigo: string;
+          total: Prisma.Decimal | null;
+          cantidad: bigint;
+        }[]
+      >`SELECT s."sucursalId" AS "sucursalId",
+               b."nombre" AS sucursal,
+               b."codigo" AS codigo,
+               COALESCE(SUM(s."total"), 0) AS total,
+               COUNT(*) AS cantidad
+        FROM "Sale" s
+        JOIN "Branch" b ON b."id" = s."sucursalId"
+        WHERE s."inquilinoId" = ${inquilinoId}::uuid
+          AND s."estado" NOT IN ('ANULADA', 'BORRADOR')
+          AND s."creadoEn" >= ${rango.desde} AND s."creadoEn" < ${rango.hasta}
+        GROUP BY s."sucursalId", b."nombre", b."codigo"
+        ORDER BY total DESC`;
+      return filas.map((f) => {
+        const total = new Prisma.Decimal(f.total ?? 0);
+        const cantidad = Number(f.cantidad);
+        return {
+          sucursalId: f.sucursalId,
+          sucursal: f.sucursal,
+          codigo: f.codigo,
+          total: total.toFixed(2),
+          cantidad,
+          ticketPromedio:
+            cantidad > 0 ? total.div(cantidad).toFixed(2) : '0.00',
+        };
+      });
+    });
+  }
+
+  /** Valor de inventario (a costo promedio) agregado por sucursal. */
+  async inventarioPorSucursal() {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const filas = await tx.$queryRaw<
+        {
+          sucursalId: string;
+          valor: Prisma.Decimal | null;
+          skus: bigint;
+        }[]
+      >`SELECT w."sucursalId" AS "sucursalId",
+               COALESCE(SUM(sb."enStock" * sb."costoPromedio"), 0) AS valor,
+               COUNT(*) AS skus
+        FROM "StockBalance" sb
+        JOIN "Warehouse" w ON w."id" = sb."almacenId"
+        WHERE sb."inquilinoId" = ${inquilinoId}::uuid
+          AND sb."enStock" > 0
+        GROUP BY w."sucursalId"`;
+      return filas.map((f) => ({
+        sucursalId: f.sucursalId,
+        valorInventario: new Prisma.Decimal(f.valor ?? 0).toFixed(2),
+        skus: Number(f.skus),
+      }));
+    });
+  }
+
+  /**
+   * Reporte por sucursal: fusiona ventas del rango + valorizado de inventario
+   * actual, una fila por sucursal (incluye sucursales sin ventas).
+   */
+  async reporteSucursales(rango: RangoFechas) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    const [ventas, inventario, sucursales] = await Promise.all([
+      this.ventasPorSucursal(rango),
+      this.inventarioPorSucursal(),
+      this.prisma.ejecutarEnTenant(inquilinoId, (tx) =>
+        tx.branch.findMany({
+          where: { inquilinoId, estado: 'ACTIVO' },
+          select: { id: true, codigo: true, nombre: true },
+          orderBy: { codigo: 'asc' },
+        }),
+      ),
+    ]);
+    const ventaPorId = new Map(ventas.map((v) => [v.sucursalId, v]));
+    const invPorId = new Map(inventario.map((i) => [i.sucursalId, i]));
+
+    const filas = sucursales.map((s) => {
+      const v = ventaPorId.get(s.id);
+      const i = invPorId.get(s.id);
+      return {
+        sucursalId: s.id,
+        codigo: s.codigo,
+        sucursal: s.nombre,
+        ventasTotal: v?.total ?? '0.00',
+        ventasCantidad: v?.cantidad ?? 0,
+        ticketPromedio: v?.ticketPromedio ?? '0.00',
+        valorInventario: i?.valorInventario ?? '0.00',
+        skus: i?.skus ?? 0,
+      };
+    });
+
+    const totales = filas.reduce(
+      (acc, f) => ({
+        ventasTotal: acc.ventasTotal.add(f.ventasTotal),
+        ventasCantidad: acc.ventasCantidad + f.ventasCantidad,
+        valorInventario: acc.valorInventario.add(f.valorInventario),
+      }),
+      {
+        ventasTotal: new Prisma.Decimal(0),
+        ventasCantidad: 0,
+        valorInventario: new Prisma.Decimal(0),
+      },
+    );
+
+    return {
+      filas,
+      totales: {
+        ventasTotal: totales.ventasTotal.toFixed(2),
+        ventasCantidad: totales.ventasCantidad,
+        valorInventario: totales.valorInventario.toFixed(2),
+      },
+    };
+  }
+
   /** Productos más vendidos (por importe) en el rango. */
-  async topProductos(rango: RangoFechas, limite = 10) {
+  async topProductos(rango: RangoFechas, limite = 10, sucursalId?: string) {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
     return this.prisma.ejecutarEnTenant(
       inquilinoId,
@@ -83,6 +212,7 @@ export class ReportesService {
         WHERE si."inquilinoId" = ${inquilinoId}::uuid
           AND s."estado" NOT IN ('ANULADA', 'BORRADOR')
           AND s."creadoEn" >= ${rango.desde} AND s."creadoEn" < ${rango.hasta}
+          ${sucursalId ? Prisma.sql`AND s."sucursalId" = ${sucursalId}::uuid` : Prisma.empty}
         GROUP BY si."varianteId"
         ORDER BY total DESC
         LIMIT ${limite}`,

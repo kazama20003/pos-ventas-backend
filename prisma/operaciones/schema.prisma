@@ -11,6 +11,13 @@ datasource db {
 /// Prisma schema cannot express PostgreSQL CHECK constraints or row-level security.
 /// Add those controls in SQL migrations and keep tenant context enforced in application transactions.
 
+enum TipoAlmacen {
+  PRINCIPAL
+  TRANSITO
+  MERMA
+  DEVOLUCIONES
+}
+
 enum EstadoRegistro {
   ACTIVO
   INACTIVO
@@ -388,6 +395,8 @@ model Warehouse {
   codigo                String
   nombre                String
   address               String?
+  tipo                  TipoAlmacen            @default(PRINCIPAL)
+  esPredeterminado      Boolean                @default(false)
   estado                EstadoRegistro         @default(ACTIVO)
   creadoEn              DateTime               @default(now())
   actualizadoEn         DateTime               @updatedAt
@@ -650,6 +659,7 @@ model Product {
   codigo        String
   nombre        String
   descripcion   String?
+  imagenUrl     String?
   kind          TipoProducto        @default(ESTANDAR)
   estado        EstadoRegistro      @default(ACTIVO)
   creadoEn      DateTime            @default(now())
@@ -908,6 +918,10 @@ model StockBalance {
   enTransito    Decimal        @default(0) @db.Decimal(18, 6)
   available     Decimal        @default(0) @db.Decimal(18, 6)
   costoPromedio Decimal        @default(0) @db.Decimal(18, 6)
+  /// Punto de reorden: alerta cuando available <= stockMinimo (0 = sin alerta).
+  stockMinimo   Decimal        @default(0) @db.Decimal(18, 6)
+  /// Nivel objetivo de reposición (0 = sin tope; sugerido = stockMaximo - available).
+  stockMaximo   Decimal        @default(0) @db.Decimal(18, 6)
   version       Int            @default(0)
   actualizadoEn DateTime       @updatedAt
   warehouse     Warehouse      @relation(fields: [almacenId], references: [id], onDelete: Restrict)
@@ -933,6 +947,7 @@ model InventoryLedgerEntry {
   referenciaId   String                   @db.Uuid
   correlationId  String?                  @db.Uuid
   idempotencyKey String
+  notas          String?
   occurredAt     DateTime
   creadoEn       DateTime                 @default(now())
   warehouse      Warehouse                @relation(fields: [inquilinoId, almacenId], references: [inquilinoId, id], onDelete: Restrict)

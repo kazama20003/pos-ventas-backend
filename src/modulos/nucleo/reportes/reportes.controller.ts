@@ -14,15 +14,46 @@ export class ReportesController {
 
   @RequierePermiso('reportes.leer')
   @Get('ventas')
-  ventas(@Query('desde') desde: string, @Query('hasta') hasta: string) {
-    const rango = this.rango(desde, hasta);
-    return this.reportes.ventasResumen(rango);
+  ventas(
+    @Query('desde') desde: string,
+    @Query('hasta') hasta: string,
+    @Query('sucursalId') sucursalId?: string,
+  ) {
+    return this.reportes.ventasResumen(
+      this.rango(desde, hasta),
+      sucursalId || undefined,
+    );
   }
 
   @RequierePermiso('reportes.leer')
   @Get('ventas-por-dia')
-  ventasPorDia(@Query('desde') desde: string, @Query('hasta') hasta: string) {
-    return this.reportes.ventasPorDia(this.rango(desde, hasta));
+  ventasPorDia(
+    @Query('desde') desde: string,
+    @Query('hasta') hasta: string,
+    @Query('sucursalId') sucursalId?: string,
+  ) {
+    return this.reportes.ventasPorDia(
+      this.rango(desde, hasta),
+      sucursalId || undefined,
+    );
+  }
+
+  @RequierePermiso('reportes.leer')
+  @Get('ventas-por-sucursal')
+  ventasPorSucursal(
+    @Query('desde') desde: string,
+    @Query('hasta') hasta: string,
+  ) {
+    return this.reportes.ventasPorSucursal(this.rango(desde, hasta));
+  }
+
+  @RequierePermiso('reportes.leer')
+  @Get('por-sucursal')
+  reporteSucursales(
+    @Query('desde') desde: string,
+    @Query('hasta') hasta: string,
+  ) {
+    return this.reportes.reporteSucursales(this.rango(desde, hasta));
   }
 
   @RequierePermiso('reportes.leer')
@@ -31,10 +62,12 @@ export class ReportesController {
     @Query('desde') desde: string,
     @Query('hasta') hasta: string,
     @Query('limite') limite?: string,
+    @Query('sucursalId') sucursalId?: string,
   ) {
     return this.reportes.topProductos(
       this.rango(desde, hasta),
       limite ? Number(limite) : undefined,
+      sucursalId || undefined,
     );
   }
 

@@ -8,6 +8,9 @@ import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaci
 import { ContextoSolicitudService } from '../../../compartido/contexto/contexto-solicitud.service';
 import { GatingService } from '../../administracion/suscripciones/gating.service';
 import {
+  ActualizarAlmacenDto,
+  ActualizarCajaDto,
+  ActualizarSucursalDto,
   CrearAlmacenDto,
   CrearCajaDto,
   CrearSucursalDto,
@@ -70,9 +73,55 @@ export class SucursalesService {
           codigo: true,
           nombre: true,
           estado: true,
+          sunatUbigeo: true,
+          address: true,
+          phone: true,
+          timezone: true,
+          _count: { select: { almacenes: true, cajas: true } },
         },
       }),
     );
+  }
+
+  async actualizarSucursal(id: string, dto: ActualizarSucursalDto) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      await this.exigirSucursal(tx, inquilinoId, id);
+      return tx.branch.update({
+        where: { id },
+        data: {
+          ...(dto.nombre !== undefined ? { nombre: dto.nombre } : {}),
+          ...(dto.sunatUbigeo !== undefined
+            ? { sunatUbigeo: dto.sunatUbigeo || null }
+            : {}),
+          ...(dto.address !== undefined
+            ? { address: dto.address || null }
+            : {}),
+          ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
+        },
+        select: {
+          id: true,
+          codigo: true,
+          nombre: true,
+          estado: true,
+          sunatUbigeo: true,
+          address: true,
+          phone: true,
+        },
+      });
+    });
+  }
+
+  async cambiarEstadoSucursal(id: string, archivar: boolean) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      await this.exigirSucursal(tx, inquilinoId, id);
+      return tx.branch.update({
+        where: { id },
+        data: { estado: archivar ? 'ARCHIVADO' : 'ACTIVO' },
+        select: { id: true, estado: true },
+      });
+    });
   }
 
   async crearAlmacen(dto: CrearAlmacenDto) {
@@ -85,6 +134,10 @@ export class SucursalesService {
         { sucursalId: dto.sucursalId, codigo: dto.codigo },
         'almacén',
       );
+      // El primer almacén de la sucursal queda como predeterminado.
+      const yaHay = await tx.warehouse.count({
+        where: { inquilinoId, sucursalId: dto.sucursalId },
+      });
       return tx.warehouse.create({
         data: {
           inquilinoId,
@@ -92,8 +145,17 @@ export class SucursalesService {
           codigo: dto.codigo,
           nombre: dto.nombre,
           address: dto.address ?? null,
+          tipo: dto.tipo ?? 'PRINCIPAL',
+          esPredeterminado: yaHay === 0,
         },
-        select: { id: true, codigo: true, nombre: true, estado: true },
+        select: {
+          id: true,
+          codigo: true,
+          nombre: true,
+          tipo: true,
+          esPredeterminado: true,
+          estado: true,
+        },
       });
     });
   }
@@ -103,16 +165,99 @@ export class SucursalesService {
     return this.prisma.ejecutarEnTenant(inquilinoId, (tx) =>
       tx.warehouse.findMany({
         where: { inquilinoId, sucursalId: sucursalId || undefined },
-        orderBy: { codigo: 'asc' },
+        orderBy: [{ esPredeterminado: 'desc' }, { codigo: 'asc' }],
         select: {
           id: true,
           sucursalId: true,
           codigo: true,
           nombre: true,
           estado: true,
+          address: true,
+          tipo: true,
+          esPredeterminado: true,
         },
       }),
     );
+  }
+
+  /**
+   * Marca un almacén como predeterminado de su sucursal (destino/origen por
+   * defecto de ventas y operaciones). Desmarca al anterior de forma atómica.
+   */
+  async marcarAlmacenPredeterminado(id: string) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const almacen = await tx.warehouse.findFirst({
+        where: { id, inquilinoId },
+        select: { id: true, sucursalId: true, estado: true },
+      });
+      if (!almacen) throw new NotFoundException('Almacén no encontrado');
+      if (almacen.estado !== 'ACTIVO')
+        throw new ConflictException(
+          'No se puede predeterminar un almacén archivado',
+        );
+      // Quitar el flag al actual predeterminado de la sucursal (si otro).
+      await tx.warehouse.updateMany({
+        where: {
+          inquilinoId,
+          sucursalId: almacen.sucursalId,
+          esPredeterminado: true,
+          id: { not: id },
+        },
+        data: { esPredeterminado: false },
+      });
+      return tx.warehouse.update({
+        where: { id },
+        data: { esPredeterminado: true },
+        select: { id: true, esPredeterminado: true },
+      });
+    });
+  }
+
+  async actualizarAlmacen(id: string, dto: ActualizarAlmacenDto) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const existe = await tx.warehouse.findFirst({
+        where: { id, inquilinoId },
+        select: { id: true },
+      });
+      if (!existe) throw new NotFoundException('Almacén no encontrado');
+      return tx.warehouse.update({
+        where: { id },
+        data: {
+          ...(dto.nombre !== undefined ? { nombre: dto.nombre } : {}),
+          ...(dto.address !== undefined
+            ? { address: dto.address || null }
+            : {}),
+          ...(dto.tipo !== undefined ? { tipo: dto.tipo } : {}),
+        },
+        select: {
+          id: true,
+          codigo: true,
+          nombre: true,
+          estado: true,
+          address: true,
+          tipo: true,
+          esPredeterminado: true,
+        },
+      });
+    });
+  }
+
+  async cambiarEstadoAlmacen(id: string, archivar: boolean) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const existe = await tx.warehouse.findFirst({
+        where: { id, inquilinoId },
+        select: { id: true },
+      });
+      if (!existe) throw new NotFoundException('Almacén no encontrado');
+      return tx.warehouse.update({
+        where: { id },
+        data: { estado: archivar ? 'ARCHIVADO' : 'ACTIVO' },
+        select: { id: true, estado: true },
+      });
+    });
   }
 
   async crearCaja(dto: CrearCajaDto) {
@@ -152,6 +297,40 @@ export class SucursalesService {
         },
       }),
     );
+  }
+
+  async actualizarCaja(id: string, dto: ActualizarCajaDto) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const existe = await tx.cashRegister.findFirst({
+        where: { id, inquilinoId },
+        select: { id: true },
+      });
+      if (!existe) throw new NotFoundException('Caja no encontrada');
+      return tx.cashRegister.update({
+        where: { id },
+        data: {
+          ...(dto.nombre !== undefined ? { nombre: dto.nombre } : {}),
+        },
+        select: { id: true, codigo: true, nombre: true, estado: true },
+      });
+    });
+  }
+
+  async cambiarEstadoCaja(id: string, archivar: boolean) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const existe = await tx.cashRegister.findFirst({
+        where: { id, inquilinoId },
+        select: { id: true },
+      });
+      if (!existe) throw new NotFoundException('Caja no encontrada');
+      return tx.cashRegister.update({
+        where: { id },
+        data: { estado: archivar ? 'ARCHIVADO' : 'ACTIVO' },
+        select: { id: true, estado: true },
+      });
+    });
   }
 
   private async exigirSucursal(

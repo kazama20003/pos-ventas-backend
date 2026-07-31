@@ -6,6 +6,7 @@ import {
 import { Prisma } from '../../../../generado/operaciones/client';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import { ContextoSolicitudService } from '../../../compartido/contexto/contexto-solicitud.service';
+import { AutorizacionSucursalService } from '../identidad/autorizacion-sucursal.service';
 import { AbrirCajaDto } from './dto/abrir-caja.dto';
 import { CerrarCajaDto } from './dto/cerrar-caja.dto';
 
@@ -25,11 +26,14 @@ export class CajaService {
   constructor(
     private readonly prisma: CorePrismaService,
     private readonly contexto: ContextoSolicitudService,
+    private readonly autorizacion: AutorizacionSucursalService,
   ) {}
 
   async abrir(dto: AbrirCajaDto) {
     const { inquilinoId, identidadUsuarioId } =
       this.contexto.obtenerObligatorio();
+    // Alcance por sucursal: solo puede abrir caja en sucursales permitidas.
+    await this.autorizacion.exigirEnSucursal('caja.abrir', dto.sucursalId);
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       const caja = await tx.cashRegister.findFirst({
         where: {

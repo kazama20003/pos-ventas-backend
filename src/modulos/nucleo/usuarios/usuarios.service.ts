@@ -51,7 +51,8 @@ export class UsuariosService {
         throw new BadRequestException('Organización no encontrada');
       }
 
-      await this.validarRoles(tx, inquilinoId, dto.rolIds);
+      const asignaciones = this.normalizarRoles(dto);
+      await this.validarAsignaciones(tx, inquilinoId, asignaciones);
 
       const identidad = await tx.userIdentity
         .create({
@@ -87,10 +88,11 @@ export class UsuariosService {
       });
 
       await tx.membershipRole.createMany({
-        data: dto.rolIds.map((rolId) => ({
+        data: asignaciones.map((a) => ({
           inquilinoId,
           membresiaId: membresia.id,
-          rolId,
+          rolId: a.rolId,
+          sucursalId: a.sucursalId ?? null,
         })),
       });
 
@@ -99,7 +101,7 @@ export class UsuariosService {
         membresiaId: membresia.id,
         email: identidad.email,
         estado: 'INVITADA',
-        roles: dto.rolIds,
+        roles: asignaciones,
       };
     });
   }
@@ -120,7 +122,13 @@ export class UsuariosService {
               sujetoExterno: true,
             },
           },
-          roles: { select: { role: { select: { id: true, codigo: true } } } },
+          roles: {
+            select: {
+              rolId: true,
+              sucursalId: true,
+              role: { select: { id: true, codigo: true, nombre: true } },
+            },
+          },
         },
         orderBy: { creadoEn: 'desc' },
       });
@@ -132,7 +140,12 @@ export class UsuariosService {
         nombreVisible: m.userIdentity.nombreVisible,
         vinculadoAGoogle:
           !m.userIdentity.sujetoExterno.startsWith(PREFIJO_INVITACION),
-        roles: m.roles.map((r) => ({ id: r.role.id, codigo: r.role.codigo })),
+        roles: m.roles.map((r) => ({
+          id: r.role.id,
+          codigo: r.role.codigo,
+          nombre: r.role.nombre,
+          sucursalId: r.sucursalId,
+        })),
       }));
     });
   }
@@ -155,16 +168,18 @@ export class UsuariosService {
         });
       }
 
-      if (dto.rolIds) {
-        await this.validarRoles(tx, inquilinoId, dto.rolIds);
+      if (dto.roles || dto.rolIds) {
+        const asignaciones = this.normalizarRoles(dto);
+        await this.validarAsignaciones(tx, inquilinoId, asignaciones);
         await tx.membershipRole.deleteMany({
           where: { inquilinoId, membresiaId },
         });
         await tx.membershipRole.createMany({
-          data: dto.rolIds.map((rolId) => ({
+          data: asignaciones.map((a) => ({
             inquilinoId,
             membresiaId,
-            rolId,
+            rolId: a.rolId,
+            sucursalId: a.sucursalId ?? null,
           })),
         });
       }
@@ -191,22 +206,108 @@ export class UsuariosService {
     });
   }
 
-  private async validarRoles(
+  /**
+   * Sucursales donde el usuario actual puede operar. Si tiene un rol de sistema
+   * (ADMIN) o algún rol global (sin sucursal), devuelve todas las activas;
+   * de lo contrario, solo las sucursales de sus roles.
+   */
+  async misSucursales() {
+    const { inquilinoId, identidadUsuarioId } =
+      this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const memberships = await tx.membership.findMany({
+        where: { inquilinoId, identidadUsuarioId, estado: 'ACTIVA' },
+        select: {
+          roles: {
+            select: {
+              sucursalId: true,
+              role: { select: { isSystem: true } },
+            },
+          },
+        },
+      });
+      const flat = memberships.flatMap((m) => m.roles);
+      const esGlobal = flat.some((r) => r.role?.isSystem || !r.sucursalId);
+
+      const sucursales = await tx.branch.findMany({
+        where: {
+          inquilinoId,
+          estado: 'ACTIVO',
+          ...(esGlobal
+            ? {}
+            : {
+                id: {
+                  in: [
+                    ...new Set(
+                      flat
+                        .map((r) => r.sucursalId)
+                        .filter((s): s is string => !!s),
+                    ),
+                  ],
+                },
+              }),
+        },
+        select: { id: true, codigo: true, nombre: true },
+        orderBy: { codigo: 'asc' },
+      });
+      return { global: esGlobal, sucursales };
+    });
+  }
+
+  /** Organizaciones activas del tenant (para invitar usuarios). */
+  async listarOrganizaciones() {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, (tx) =>
+      tx.organization.findMany({
+        where: { inquilinoId, estado: 'ACTIVO' },
+        select: { id: true, codigo: true, nombre: true },
+        orderBy: { codigo: 'asc' },
+      }),
+    );
+  }
+
+  /** Normaliza `roles` (con sucursal) o `rolIds` (global) a una sola forma. */
+  private normalizarRoles(dto: {
+    roles?: { rolId: string; sucursalId?: string }[];
+    rolIds?: string[];
+  }): { rolId: string; sucursalId?: string }[] {
+    if (dto.roles && dto.roles.length) return dto.roles;
+    return (dto.rolIds ?? []).map((rolId) => ({ rolId }));
+  }
+
+  private async validarAsignaciones(
     tx: Prisma.TransactionClient,
     inquilinoId: string,
-    rolIds: string[],
+    asignaciones: { rolId: string; sucursalId?: string }[],
   ): Promise<void> {
-    if (!rolIds.length) {
-      return;
-    }
-    const encontrados = await tx.role.findMany({
+    if (!asignaciones.length) return;
+
+    const rolIds = [...new Set(asignaciones.map((a) => a.rolId))];
+    const roles = await tx.role.findMany({
       where: { id: { in: rolIds }, inquilinoId },
       select: { id: true },
     });
-    if (encontrados.length !== rolIds.length) {
+    if (roles.length !== rolIds.length) {
       throw new BadRequestException(
         'Uno o más roles no existen en este tenant',
       );
+    }
+
+    const sucursalIds = [
+      ...new Set(
+        asignaciones.map((a) => a.sucursalId).filter((s): s is string => !!s),
+      ),
+    ];
+    if (sucursalIds.length) {
+      const sucursales = await tx.branch.findMany({
+        where: { id: { in: sucursalIds }, inquilinoId },
+        select: { id: true },
+      });
+      if (sucursales.length !== sucursalIds.length) {
+        throw new BadRequestException(
+          'Una o más sucursales asignadas no existen en este tenant',
+        );
+      }
     }
   }
 }
