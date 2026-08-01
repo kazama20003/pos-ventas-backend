@@ -27,6 +27,12 @@ export class RolesController {
     return this.roles.listar();
   }
 
+  @RequierePermiso('roles.listar')
+  @Get('catalogo-permisos')
+  catalogoPermisos() {
+    return this.roles.catalogoPermisos();
+  }
+
   @RequierePermiso('roles.asignar')
   @Put(':rolId/permisos')
   asignarPermisos(

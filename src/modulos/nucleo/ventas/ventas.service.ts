@@ -48,6 +48,45 @@ export class VentasService {
     private readonly autorizacion: AutorizacionSucursalService,
   ) {}
 
+  /**
+   * Contexto que el POS necesita para vender en una sucursal: empresa, moneda,
+   * series de comprobante activas y si hay una lista de precios por defecto.
+   */
+  async contextoPos(sucursalId: string) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    await this.autorizacion.exigirEnSucursal('ventas.crear', sucursalId);
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const suc = await tx.branch.findFirst({
+        where: { id: sucursalId, inquilinoId },
+        select: {
+          empresaId: true,
+          company: { select: { moneda: true } },
+        },
+      });
+      if (!suc) throw new NotFoundException('Sucursal no encontrada');
+      const series = await tx.documentSeries.findMany({
+        where: { inquilinoId, empresaId: suc.empresaId, estado: 'ACTIVO' },
+        select: { id: true, documentType: true, series: true },
+        orderBy: { series: 'asc' },
+      });
+      const listaDefault = await tx.priceList.findFirst({
+        where: {
+          inquilinoId,
+          empresaId: suc.empresaId,
+          isDefault: true,
+          estado: 'ACTIVO',
+        },
+        select: { id: true },
+      });
+      return {
+        empresaId: suc.empresaId,
+        moneda: suc.company?.moneda ?? 'PEN',
+        series,
+        tienePrecios: listaDefault != null,
+      };
+    });
+  }
+
   async crear(dto: CrearVentaDto) {
     const { inquilinoId, identidadUsuarioId } =
       this.contexto.obtenerObligatorio();

@@ -9,6 +9,7 @@ import { ContextoSolicitudService } from '../../../compartido/contexto/contexto-
 import { GatingService } from '../../administracion/suscripciones/gating.service';
 import {
   ActualizarCategoriaDto,
+  ActualizarMarcaDto,
   ActualizarProductoDto,
   ActualizarUnidadMedidaDto,
   ActualizarVarianteDto,
@@ -123,6 +124,35 @@ export class CatalogoService {
         orderBy: { nombre: 'asc' },
       }),
     );
+  }
+
+  async actualizarMarca(id: string, dto: ActualizarMarcaDto) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const marca = await tx.brand.findFirst({ where: { id, inquilinoId } });
+      if (!marca) throw new NotFoundException('Marca no encontrada');
+      return tx.brand.update({
+        where: { id },
+        data: { nombre: dto.nombre.trim() },
+      });
+    });
+  }
+
+  async archivarMarca(id: string) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const marca = await tx.brand.findFirst({
+        where: { id, inquilinoId },
+        include: { _count: { select: { products: true } } },
+      });
+      if (!marca) throw new NotFoundException('Marca no encontrada');
+      if (marca._count.products > 0)
+        throw new BadRequestException(
+          'La marca tiene productos asociados; no se puede eliminar',
+        );
+      await tx.brand.update({ where: { id }, data: { estado: 'ARCHIVADO' } });
+      return { id, estado: 'ARCHIVADO' as const };
+    });
   }
 
   // --------------------- Importación masiva ---------------------
@@ -347,7 +377,9 @@ export class CatalogoService {
       if (!cat) throw new NotFoundException('Categoría no encontrada');
       if (dto.padreId) {
         if (dto.padreId === id)
-          throw new BadRequestException('Una categoría no puede ser su propio padre');
+          throw new BadRequestException(
+            'Una categoría no puede ser su propio padre',
+          );
         await this.exigirCategoria(tx, inquilinoId, dto.padreId);
       }
       try {
@@ -366,7 +398,9 @@ export class CatalogoService {
           e instanceof Prisma.PrismaClientKnownRequestError &&
           e.code === 'P2002'
         )
-          throw new BadRequestException('Ya existe una categoría con ese código');
+          throw new BadRequestException(
+            'Ya existe una categoría con ese código',
+          );
         throw e;
       }
     });
@@ -385,8 +419,13 @@ export class CatalogoService {
           'La categoría tiene subcategorías; muévelas o elimínalas primero',
         );
       // Se archiva (borrado lógico) y se desligan sus productos.
-      await tx.productCategory.deleteMany({ where: { categoriaId: id, inquilinoId } });
-      await tx.category.update({ where: { id }, data: { estado: 'ARCHIVADO' } });
+      await tx.productCategory.deleteMany({
+        where: { categoriaId: id, inquilinoId },
+      });
+      await tx.category.update({
+        where: { id },
+        data: { estado: 'ARCHIVADO' },
+      });
       return { id, estado: 'ARCHIVADO' as const };
     });
   }
@@ -396,11 +435,17 @@ export class CatalogoService {
   async actualizarUnidad(id: string, dto: ActualizarUnidadMedidaDto) {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
-      const u = await tx.unitOfMeasure.findFirst({ where: { id, inquilinoId } });
+      const u = await tx.unitOfMeasure.findFirst({
+        where: { id, inquilinoId },
+      });
       if (!u) throw new NotFoundException('Unidad de medida no encontrada');
       return tx.unitOfMeasure.update({
         where: { id },
-        data: { nombre: dto.nombre, symbol: dto.symbol, decimals: dto.decimals },
+        data: {
+          nombre: dto.nombre,
+          symbol: dto.symbol,
+          decimals: dto.decimals,
+        },
       });
     });
   }
@@ -417,7 +462,10 @@ export class CatalogoService {
         throw new BadRequestException(
           'La unidad está en uso por productos; no se puede eliminar',
         );
-      await tx.unitOfMeasure.update({ where: { id }, data: { estado: 'ARCHIVADO' } });
+      await tx.unitOfMeasure.update({
+        where: { id },
+        data: { estado: 'ARCHIVADO' },
+      });
       return { id, estado: 'ARCHIVADO' as const };
     });
   }
@@ -530,7 +578,10 @@ export class CatalogoService {
 
         if (v.precio !== undefined && v.precio !== null) {
           if (!lista)
-            lista = await this.resolverListaPreciosPredeterminada(tx, inquilinoId);
+            lista = await this.resolverListaPreciosPredeterminada(
+              tx,
+              inquilinoId,
+            );
           await tx.priceListItem.create({
             data: {
               inquilinoId,
@@ -548,7 +599,11 @@ export class CatalogoService {
               'No se puede cargar stock a una variante que no controla inventario',
             );
           if (!almacenId)
-            almacenId = await this.resolverAlmacen(tx, inquilinoId, dto.almacenId);
+            almacenId = await this.resolverAlmacen(
+              tx,
+              inquilinoId,
+              dto.almacenId,
+            );
           await this.cargarStockInicial(
             tx,
             inquilinoId,
@@ -615,7 +670,9 @@ export class CatalogoService {
                       { sku: { contains: q, mode: 'insensitive' } },
                       {
                         barcodigos: {
-                          some: { codigo: { contains: q, mode: 'insensitive' } },
+                          some: {
+                            codigo: { contains: q, mode: 'insensitive' },
+                          },
                         },
                       },
                     ],
@@ -697,7 +754,9 @@ export class CatalogoService {
         select: { variant: { select: { productoId: true } } },
       });
       if (!barra)
-        throw new NotFoundException('No hay ningún producto con ese código de barras');
+        throw new NotFoundException(
+          'No hay ningún producto con ese código de barras',
+        );
       return this.obtenerProductoTx(tx, inquilinoId, barra.variant.productoId);
     });
   }
@@ -724,10 +783,25 @@ export class CatalogoService {
       if (!producto) throw new NotFoundException('Producto no encontrado');
 
       // Validar referencias que se vayan a tocar.
-      await this.exigirConteo(tx.category, inquilinoId, dto.categoriaIds ?? [], 'Categoría');
+      await this.exigirConteo(
+        tx.category,
+        inquilinoId,
+        dto.categoriaIds ?? [],
+        'Categoría',
+      );
       if (dto.unidadMedidaId)
-        await this.exigirConteo(tx.unitOfMeasure, inquilinoId, [dto.unidadMedidaId], 'Unidad de medida');
-      await this.exigirConteo(tx.tax, inquilinoId, dto.impuestoIds ?? [], 'Impuesto');
+        await this.exigirConteo(
+          tx.unitOfMeasure,
+          inquilinoId,
+          [dto.unidadMedidaId],
+          'Unidad de medida',
+        );
+      await this.exigirConteo(
+        tx.tax,
+        inquilinoId,
+        dto.impuestoIds ?? [],
+        'Impuesto',
+      );
       if (dto.marcaId)
         await this.exigirConteo(tx.brand, inquilinoId, [dto.marcaId], 'Marca');
 
@@ -740,9 +814,12 @@ export class CatalogoService {
             nombre: dto.nombre,
             descripcion: dto.descripcion,
             kind: dto.kind,
-            marcaId: dto.marcaId === undefined ? undefined : dto.marcaId || null,
+            marcaId:
+              dto.marcaId === undefined ? undefined : dto.marcaId || null,
             imagenUrl:
-              dto.imagenUrl === undefined ? undefined : dto.imagenUrl.trim() || null,
+              dto.imagenUrl === undefined
+                ? undefined
+                : dto.imagenUrl.trim() || null,
           },
         });
       } catch (e) {
@@ -751,7 +828,9 @@ export class CatalogoService {
 
       // Reemplazar categorías si se enviaron.
       if (dto.categoriaIds) {
-        await tx.productCategory.deleteMany({ where: { productoId: id, inquilinoId } });
+        await tx.productCategory.deleteMany({
+          where: { productoId: id, inquilinoId },
+        });
         if (dto.categoriaIds.length)
           await tx.productCategory.createMany({
             data: dto.categoriaIds.map((categoriaId, index) => ({
@@ -794,7 +873,10 @@ export class CatalogoService {
 
         // Precio de venta: actualiza (o crea) el ítem en la lista por defecto.
         if (dto.precio !== undefined && dto.precio !== null) {
-          const lista = await this.resolverListaPreciosPredeterminada(tx, inquilinoId);
+          const lista = await this.resolverListaPreciosPredeterminada(
+            tx,
+            inquilinoId,
+          );
           const monto = new Prisma.Decimal(dto.precio);
           const existente = await tx.priceListItem.findFirst({
             where: {
@@ -883,7 +965,9 @@ export class CatalogoService {
   async archivarProducto(id: string) {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
-      const producto = await tx.product.findFirst({ where: { id, inquilinoId } });
+      const producto = await tx.product.findFirst({
+        where: { id, inquilinoId },
+      });
       if (!producto) throw new NotFoundException('Producto no encontrado');
       await tx.product.update({ where: { id }, data: { estado: 'ARCHIVADO' } });
       return { id, estado: 'ARCHIVADO' as const };
@@ -900,8 +984,18 @@ export class CatalogoService {
         select: { id: true, codigo: true },
       });
       if (!producto) throw new NotFoundException('Producto no encontrado');
-      await this.exigirConteo(tx.unitOfMeasure, inquilinoId, [dto.unidadMedidaId], 'Unidad de medida');
-      await this.exigirConteo(tx.tax, inquilinoId, dto.impuestoIds ?? [], 'Impuesto');
+      await this.exigirConteo(
+        tx.unitOfMeasure,
+        inquilinoId,
+        [dto.unidadMedidaId],
+        'Unidad de medida',
+      );
+      await this.exigirConteo(
+        tx.tax,
+        inquilinoId,
+        dto.impuestoIds ?? [],
+        'Impuesto',
+      );
 
       const sku = dto.sku?.trim()
         ? dto.sku.trim()
@@ -945,9 +1039,18 @@ export class CatalogoService {
 
       await this.agregarBarcodesVariante(tx, inquilinoId, variante.id, dto);
       if (dto.precio !== undefined && dto.precio !== null)
-        await this.fijarPrecioVariante(tx, inquilinoId, variante.id, dto.precio);
+        await this.fijarPrecioVariante(
+          tx,
+          inquilinoId,
+          variante.id,
+          dto.precio,
+        );
       if (dto.stockInicial && dto.stockInicial > 0) {
-        const almacenId = await this.resolverAlmacen(tx, inquilinoId, undefined);
+        const almacenId = await this.resolverAlmacen(
+          tx,
+          inquilinoId,
+          undefined,
+        );
         await this.cargarStockInicial(
           tx,
           inquilinoId,
@@ -974,8 +1077,18 @@ export class CatalogoService {
       });
       if (!variante) throw new NotFoundException('Variante no encontrada');
       if (dto.unidadMedidaId)
-        await this.exigirConteo(tx.unitOfMeasure, inquilinoId, [dto.unidadMedidaId], 'Unidad de medida');
-      await this.exigirConteo(tx.tax, inquilinoId, dto.impuestoIds ?? [], 'Impuesto');
+        await this.exigirConteo(
+          tx.unitOfMeasure,
+          inquilinoId,
+          [dto.unidadMedidaId],
+          'Unidad de medida',
+        );
+      await this.exigirConteo(
+        tx.tax,
+        inquilinoId,
+        dto.impuestoIds ?? [],
+        'Impuesto',
+      );
 
       try {
         await tx.productVariant.update({
@@ -993,7 +1106,9 @@ export class CatalogoService {
       }
 
       if (dto.impuestoIds) {
-        await tx.productVariantTax.deleteMany({ where: { varianteId, inquilinoId } });
+        await tx.productVariantTax.deleteMany({
+          where: { varianteId, inquilinoId },
+        });
         if (dto.impuestoIds.length)
           await tx.productVariantTax.createMany({
             data: dto.impuestoIds.map((taxId, index) => ({
@@ -1058,7 +1173,10 @@ export class CatalogoService {
           },
         });
       } catch (e) {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')
+        if (
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002'
+        )
           throw new BadRequestException(
             `El código de barras "${dto.codigo.trim()}" ya está en uso`,
           );
@@ -1073,7 +1191,11 @@ export class CatalogoService {
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       const barra = await tx.productBarcodigo.findFirst({
         where: { id: barcodeId, varianteId, inquilinoId },
-        select: { id: true, isPrimary: true, variant: { select: { productoId: true } } },
+        select: {
+          id: true,
+          isPrimary: true,
+          variant: { select: { productoId: true } },
+        },
       });
       if (!barra) throw new NotFoundException('Código de barras no encontrado');
       await tx.productBarcodigo.delete({ where: { id: barcodeId } });
@@ -1121,7 +1243,10 @@ export class CatalogoService {
           },
         });
       } catch (e) {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')
+        if (
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002'
+        )
           throw new BadRequestException(
             `El código de barras "${barras[j].codigo}" ya está en uso`,
           );
@@ -1137,17 +1262,34 @@ export class CatalogoService {
     varianteId: string,
     precio: number,
   ) {
-    const lista = await this.resolverListaPreciosPredeterminada(tx, inquilinoId);
+    const lista = await this.resolverListaPreciosPredeterminada(
+      tx,
+      inquilinoId,
+    );
     const monto = new Prisma.Decimal(precio);
     const existente = await tx.priceListItem.findFirst({
-      where: { inquilinoId, listaPreciosId: lista.id, varianteId, minQuantity: 1 },
+      where: {
+        inquilinoId,
+        listaPreciosId: lista.id,
+        varianteId,
+        minQuantity: 1,
+      },
       select: { id: true },
     });
     if (existente)
-      await tx.priceListItem.update({ where: { id: existente.id }, data: { monto } });
+      await tx.priceListItem.update({
+        where: { id: existente.id },
+        data: { monto },
+      });
     else
       await tx.priceListItem.create({
-        data: { inquilinoId, listaPreciosId: lista.id, varianteId, minQuantity: 1, monto },
+        data: {
+          inquilinoId,
+          listaPreciosId: lista.id,
+          varianteId,
+          minQuantity: 1,
+          monto,
+        },
       });
   }
 

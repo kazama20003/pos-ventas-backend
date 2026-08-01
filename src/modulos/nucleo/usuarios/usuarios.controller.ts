@@ -43,6 +43,19 @@ export class UsuariosController {
     return this.usuarios.listarOrganizaciones();
   }
 
+  /** Permisos efectivos del usuario autenticado (para gating de UI). */
+  @Get('mis-permisos')
+  misPermisos() {
+    return this.usuarios.misPermisos();
+  }
+
+  /** Reenvía el correo de invitación a un usuario aún pendiente (INVITADA). */
+  @RequierePermiso('usuarios.crear')
+  @Post(':membresiaId/reenviar-invitacion')
+  reenviarInvitacion(@Param('membresiaId', ParseUUIDPipe) membresiaId: string) {
+    return this.usuarios.reenviarInvitacion(membresiaId);
+  }
+
   @RequierePermiso('usuarios.actualizar')
   @Patch(':membresiaId')
   actualizar(

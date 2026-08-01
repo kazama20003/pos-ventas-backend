@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 
-interface DefinicionPermiso {
+export interface DefinicionPermiso {
   clave: string;
   resource: string;
   action: string;

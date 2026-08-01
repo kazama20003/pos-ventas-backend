@@ -331,6 +331,12 @@ export class CrearMarcaDto {
   nombre!: string;
 }
 
+export class ActualizarMarcaDto {
+  @IsString()
+  @IsNotEmpty()
+  nombre!: string;
+}
+
 export class ActualizarCategoriaDto {
   @IsOptional()
   @IsString()

@@ -6,7 +6,10 @@ import {
 import { Prisma } from '../../../../generado/operaciones/client';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import { ContextoSolicitudService } from '../../../compartido/contexto/contexto-solicitud.service';
-import { CLAVES_PERMISOS_VALIDAS } from '../identidad/catalogo-permisos';
+import {
+  CATALOGO_PERMISOS,
+  CLAVES_PERMISOS_VALIDAS,
+} from '../identidad/catalogo-permisos';
 import { AsignarPermisosDto, CrearRolDto } from './dto/roles.dto';
 
 @Injectable()
@@ -23,6 +26,11 @@ export class RolesService {
         `Permisos desconocidos: ${invalidas.join(', ')}`,
       );
     }
+  }
+
+  /** Catálogo canónico de permisos (referencia global, no multi-tenant). */
+  catalogoPermisos() {
+    return CATALOGO_PERMISOS;
   }
 
   async crear(dto: CrearRolDto) {

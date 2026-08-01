@@ -19,6 +19,7 @@ import {
   CrearListaPreciosDto,
   ActualizarVarianteDto,
   AgregarCodigoBarrasDto,
+  ActualizarMarcaDto,
   CrearMarcaDto,
   CrearProductoDto,
   CrearUnidadMedidaDto,
@@ -96,6 +97,21 @@ export class CatalogoController {
   @RequierePermiso('catalogo.listar')
   listarMarcas() {
     return this.catalogo.listarMarcas();
+  }
+
+  @Patch('marcas/:id')
+  @RequierePermiso('catalogo.editar')
+  actualizarMarca(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ActualizarMarcaDto,
+  ) {
+    return this.catalogo.actualizarMarca(id, dto);
+  }
+
+  @Delete('marcas/:id')
+  @RequierePermiso('catalogo.eliminar')
+  archivarMarca(@Param('id', ParseUUIDPipe) id: string) {
+    return this.catalogo.archivarMarca(id);
   }
 
   @Post('impuestos')

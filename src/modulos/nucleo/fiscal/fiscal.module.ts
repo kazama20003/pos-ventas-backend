@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConstructorComprobante } from './constructor-comprobante';
 import { FiscalController } from './fiscal.controller';
 import { FiscalService } from './fiscal.service';
+import { SeriesController } from './series.controller';
+import { SeriesService } from './series.service';
 import { PROVEEDOR_FACTURACION } from './proveedor/proveedor-facturacion';
 import { ProveedorNubefact } from './proveedor/proveedor-nubefact';
 import { ProveedorSandbox } from './proveedor/proveedor-sandbox';
@@ -13,9 +15,10 @@ import { ProcesadorFiscal } from './worker/procesador-fiscal';
  * El proveedor concreto se elige con FISCAL_PROVIDER (sandbox | nubefact).
  */
 @Module({
-  controllers: [FiscalController],
+  controllers: [FiscalController, SeriesController],
   providers: [
     FiscalService,
+    SeriesService,
     ConstructorComprobante,
     ProcesadorFiscal,
     {

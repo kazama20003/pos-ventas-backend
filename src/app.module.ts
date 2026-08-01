@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { CoreContextsModule } from './modulos/nucleo/contextos-nucleo.module';
 import { ManagementContextsModule } from './modulos/administracion/contextos-administracion.module';
 import { AppConfigModule } from './compartido/configuracion/configuracion-aplicacion.module';
+import { CorreoModule } from './compartido/correo/correo.module';
 import { ContextoModule } from './compartido/contexto/contexto.module';
 import { SeguridadModule } from './compartido/seguridad/seguridad.module';
 import { CoreDatabaseModule } from './compartido/base-datos/base-datos-operaciones.module';
@@ -16,6 +17,7 @@ import { InterceptorContexto } from './modulos/nucleo/identidad/interceptor-cont
 @Module({
   imports: [
     AppConfigModule,
+    CorreoModule,
     ContextoModule,
     SeguridadModule,
     CoreDatabaseModule,
