@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+} from '@nestjs/common';
 import { RequierePermiso } from '../identidad/decoradores';
 import { AsignarPermisosDto, CrearRolDto } from './dto/roles.dto';
 import { RolesService } from './roles.service';
@@ -17,6 +25,12 @@ export class RolesController {
   @Get()
   listar() {
     return this.roles.listar();
+  }
+
+  @RequierePermiso('roles.listar')
+  @Get('catalogo-permisos')
+  catalogoPermisos() {
+    return this.roles.catalogoPermisos();
   }
 
   @RequierePermiso('roles.asignar')

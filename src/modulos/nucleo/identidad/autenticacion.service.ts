@@ -114,51 +114,54 @@ export class AutenticacionService {
   ): Promise<TokensEmitidos> {
     const sujetoGoogle = `${PREFIJO_GOOGLE}${identidadGoogle.sub}`;
 
-    const identidad = await this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
-      const existente = await tx.userIdentity.findUnique({
-        where: {
-          inquilinoId_email: { inquilinoId, email: identidadGoogle.email },
-        },
-        select: { id: true, email: true, estado: true, sujetoExterno: true },
-      });
-
-      // Invitation-only: the identity must have been provisioned by an admin.
-      if (!existente || existente.estado !== 'ACTIVO') {
-        return null;
-      }
-
-      const membresia = await tx.membership.findFirst({
-        where: { inquilinoId, identidadUsuarioId: existente.id },
-        select: { id: true, estado: true },
-      });
-      if (!membresia) {
-        return null;
-      }
-
-      // First Google sign-in: bind the subject and activate the membership.
-      if (existente.sujetoExterno.startsWith(PREFIJO_INVITACION)) {
-        await tx.userIdentity.update({
-          where: { id: existente.id },
-          data: { sujetoExterno: sujetoGoogle, ultimoIngresoEn: new Date() },
+    const identidad = await this.prisma.ejecutarEnTenant(
+      inquilinoId,
+      async (tx) => {
+        const existente = await tx.userIdentity.findUnique({
+          where: {
+            inquilinoId_email: { inquilinoId, email: identidadGoogle.email },
+          },
+          select: { id: true, email: true, estado: true, sujetoExterno: true },
         });
-        if (membresia.estado === 'INVITADA') {
-          await tx.membership.update({
-            where: { id: membresia.id },
-            data: { estado: 'ACTIVA' },
+
+        // Invitation-only: the identity must have been provisioned by an admin.
+        if (!existente || existente.estado !== 'ACTIVO') {
+          return null;
+        }
+
+        const membresia = await tx.membership.findFirst({
+          where: { inquilinoId, identidadUsuarioId: existente.id },
+          select: { id: true, estado: true },
+        });
+        if (!membresia) {
+          return null;
+        }
+
+        // First Google sign-in: bind the subject and activate the membership.
+        if (existente.sujetoExterno.startsWith(PREFIJO_INVITACION)) {
+          await tx.userIdentity.update({
+            where: { id: existente.id },
+            data: { sujetoExterno: sujetoGoogle, ultimoIngresoEn: new Date() },
+          });
+          if (membresia.estado === 'INVITADA') {
+            await tx.membership.update({
+              where: { id: membresia.id },
+              data: { estado: 'ACTIVA' },
+            });
+          }
+        } else if (existente.sujetoExterno !== sujetoGoogle) {
+          // Email already bound to a different Google account: reject.
+          return null;
+        } else {
+          await tx.userIdentity.update({
+            where: { id: existente.id },
+            data: { ultimoIngresoEn: new Date() },
           });
         }
-      } else if (existente.sujetoExterno !== sujetoGoogle) {
-        // Email already bound to a different Google account: reject.
-        return null;
-      } else {
-        await tx.userIdentity.update({
-          where: { id: existente.id },
-          data: { ultimoIngresoEn: new Date() },
-        });
-      }
 
-      return { id: existente.id, email: existente.email };
-    });
+        return { id: existente.id, email: existente.email };
+      },
+    );
 
     if (!identidad) {
       throw new UnauthorizedException('Acceso no autorizado');
@@ -204,7 +207,9 @@ export class AutenticacionService {
   }
 
   /** Issues tokens for an already-resolved identity (used by onboarding). */
-  emitirTokensParaUsuario(usuario: UsuarioAutenticado): Promise<TokensEmitidos> {
+  emitirTokensParaUsuario(
+    usuario: UsuarioAutenticado,
+  ): Promise<TokensEmitidos> {
     return this.emitirTokens(usuario);
   }
 

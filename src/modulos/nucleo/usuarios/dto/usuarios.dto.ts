@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import {
   ArrayUnique,
   IsArray,
@@ -8,7 +9,21 @@ import {
   IsUUID,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+
+/**
+ * Asignación de un rol a una membresía, opcionalmente acotada a una sucursal.
+ * `sucursalId` ausente/null = el rol aplica en TODAS las sucursales (global).
+ */
+export class AsignacionRolDto {
+  @IsUUID()
+  rolId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  sucursalId?: string;
+}
 
 export class CrearUsuarioDto {
   @IsEmail()
@@ -23,11 +38,21 @@ export class CrearUsuarioDto {
   @IsUUID()
   organizacionId!: string;
 
-  /** Roles granted to the new membership. */
+  /**
+   * Roles globales (compat). Usa `roles` para acotar por sucursal.
+   */
+  @IsOptional()
   @IsArray()
   @ArrayUnique()
   @IsUUID('4', { each: true })
-  rolIds!: string[];
+  rolIds?: string[];
+
+  /** Roles con sucursal opcional. Tiene prioridad sobre `rolIds`. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AsignacionRolDto)
+  roles?: AsignacionRolDto[];
 }
 
 export class ActualizarUsuarioDto {
@@ -42,6 +67,12 @@ export class ActualizarUsuarioDto {
   @ArrayUnique()
   @IsUUID('4', { each: true })
   rolIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AsignacionRolDto)
+  roles?: AsignacionRolDto[];
 }
 
 export class CambiarEstadoUsuarioDto {

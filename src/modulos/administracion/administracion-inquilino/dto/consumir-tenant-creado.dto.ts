@@ -8,29 +8,6 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class ConsumirTenantCreadoDto {
-  @IsUUID()
-  id!: string;
-
-  @IsUUID()
-  inquilinoId!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(120)
-  idempotencyKey!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(120)
-  eventType!: string;
-
-  @IsObject()
-  @ValidateNested()
-  @Type(() => TenantCreadoCarga)
-  carga!: TenantCreadoCarga;
-}
-
 export class TenantCreadoCarga {
   @IsUUID()
   tenantId!: string;
@@ -64,4 +41,27 @@ export class TenantCreadoCarga {
   @IsNotEmpty()
   @MaxLength(20)
   locale!: string;
+}
+
+export class ConsumirTenantCreadoDto {
+  @IsUUID()
+  id!: string;
+
+  @IsUUID()
+  inquilinoId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  idempotencyKey!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  eventType!: string;
+
+  @IsObject()
+  @ValidateNested()
+  @Type(() => TenantCreadoCarga)
+  carga!: TenantCreadoCarga;
 }

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FilesModule } from './archivos/archivos.module';
 import { AuditModule } from './auditoria/auditoria.module';
 import { CashRegisterModule } from './caja/caja.module';
 import { CatalogModule } from './catalogo/catalogo.module';
@@ -38,6 +39,7 @@ import { UsersModule } from './usuarios/usuarios.module';
     ReportsModule,
     IntegrationsModule,
     AuditModule,
+    FilesModule,
   ],
 })
 export class CoreContextsModule {}

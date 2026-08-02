@@ -18,6 +18,10 @@ export class AppConfigService {
   readonly corsOrigin: string;
   readonly logLevel: string;
   readonly databasePoolMax: number;
+  /** Correo (Resend). Opcionales: si faltan, el envío se omite silenciosamente. */
+  readonly resendApiKey: string | null;
+  readonly mailFrom: string;
+  readonly appUrl: string;
 
   constructor() {
     const environment = process.env.ENV ?? 'local';
@@ -37,6 +41,12 @@ export class AppConfigService {
     this.corsOrigin = process.env.CORS_ORIGIN ?? '*';
     this.logLevel = process.env.LOG_LEVEL ?? 'log';
     this.databasePoolMax = Number(process.env.DATABASE_POOL_MAX ?? 10);
+    this.resendApiKey = process.env.RESEND_API_KEY ?? null;
+    this.mailFrom = process.env.MAIL_FROM ?? 'onboarding@resend.dev';
+    this.appUrl = (process.env.APP_URL ?? 'http://localhost:3000').replace(
+      /\/+$/,
+      '',
+    );
   }
 
   get isProduction(): boolean {

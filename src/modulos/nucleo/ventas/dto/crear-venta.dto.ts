@@ -27,8 +27,13 @@ export class ItemVentaDto {
   @IsUUID()
   varianteId!: string;
 
+  /**
+   * Almacén del que se descuenta el stock. Opcional: si se omite, el backend
+   * usa el almacén predeterminado de la sucursal de la venta.
+   */
+  @IsOptional()
   @IsUUID()
-  almacenId!: string;
+  almacenId?: string;
 
   /** Positive quantity. Decimals allowed (e.g. weighed goods). */
   @IsPositive()
