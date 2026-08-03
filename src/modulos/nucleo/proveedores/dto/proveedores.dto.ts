@@ -1,9 +1,12 @@
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   MaxLength,
   Min,
@@ -61,6 +64,72 @@ export class CrearProveedorDto {
   @IsInt()
   @Min(0)
   paymentTermDays?: number;
+}
+
+/** Vincula una variante a un proveedor (catálogo de aprovisionamiento). */
+export class VincularProductoProveedorDto {
+  @IsUUID()
+  varianteId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  supplierSku?: string;
+
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(0)
+  costo!: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 3)
+  moneda?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  leadTimeDays?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(0)
+  minOrderQty?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isPreferred?: boolean;
+}
+
+/** Ajusta un vínculo producto↔proveedor existente. */
+export class ActualizarProductoProveedorDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  supplierSku?: string;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(0)
+  costo?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 3)
+  moneda?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  leadTimeDays?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(0)
+  minOrderQty?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isPreferred?: boolean;
 }
 
 export class ActualizarProveedorDto {

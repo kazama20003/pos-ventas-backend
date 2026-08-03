@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -10,8 +11,10 @@ import {
 } from '@nestjs/common';
 import { RequierePermiso } from '../identidad/decoradores';
 import {
+  ActualizarProductoProveedorDto,
   ActualizarProveedorDto,
   CrearProveedorDto,
+  VincularProductoProveedorDto,
 } from './dto/proveedores.dto';
 import { ProveedoresService } from './proveedores.service';
 
@@ -50,5 +53,49 @@ export class ProveedoresController {
   @Post(':id/desactivar')
   desactivar(@Param('id', ParseUUIDPipe) id: string) {
     return this.proveedores.desactivar(id);
+  }
+
+  // --- Catálogo de aprovisionamiento (producto ↔ proveedor) ---
+
+  @RequierePermiso('proveedores.actualizar')
+  @Post(':id/productos')
+  vincularProducto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: VincularProductoProveedorDto,
+  ) {
+    return this.proveedores.vincularProducto(id, dto);
+  }
+
+  @RequierePermiso('proveedores.listar')
+  @Get(':id/productos')
+  listarProductos(@Param('id', ParseUUIDPipe) id: string) {
+    return this.proveedores.listarProductos(id);
+  }
+
+  @RequierePermiso('proveedores.listar')
+  @Get('producto/:varianteId')
+  proveedoresDeVariante(
+    @Param('varianteId', ParseUUIDPipe) varianteId: string,
+  ) {
+    return this.proveedores.proveedoresDeVariante(varianteId);
+  }
+
+  @RequierePermiso('proveedores.actualizar')
+  @Patch(':id/productos/:varianteId')
+  actualizarProducto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('varianteId', ParseUUIDPipe) varianteId: string,
+    @Body() dto: ActualizarProductoProveedorDto,
+  ) {
+    return this.proveedores.actualizarProducto(id, varianteId, dto);
+  }
+
+  @RequierePermiso('proveedores.actualizar')
+  @Delete(':id/productos/:varianteId')
+  desvincularProducto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('varianteId', ParseUUIDPipe) varianteId: string,
+  ) {
+    return this.proveedores.desvincularProducto(id, varianteId);
   }
 }
