@@ -97,6 +97,9 @@ export class ProveedorNubefact implements ProveedorFacturacion {
       total_exonerada: Number(s.totales.exonerado),
       total_inafecta: Number(s.totales.inafecto),
       total_igv: Number(s.totales.igv),
+      // ICBPER (bolsas): Nubefact lo declara como "otros tributos" del documento.
+      total_otros_tributos: Number(s.totales.icbper),
+      total_impuestos: Number(s.totales.igv) + Number(s.totales.icbper),
       total: Number(s.totales.total),
       enviar_automaticamente_a_la_sunat: true,
       items: s.items.map((i) => ({
@@ -108,6 +111,9 @@ export class ProveedorNubefact implements ProveedorFacturacion {
         tipo_de_igv: Number(i.tipoAfectacion),
         igv: Number(i.montoImpuesto),
         total_base_igv: Number(i.baseImponible),
+        // ICBPER por ítem (monto total y factor por unidad); 0 si no aplica.
+        icbper: Number(i.montoIcbper),
+        factor_icbper: Number(i.factorIcbper),
         total: Number(i.total),
       })),
       ...(s.nota

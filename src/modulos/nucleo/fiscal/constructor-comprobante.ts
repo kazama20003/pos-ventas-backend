@@ -26,6 +26,8 @@ export interface LineaVenta {
   precioUnitario: Prisma.Decimal;
   valorUnitario: Prisma.Decimal;
   montoImpuesto: Prisma.Decimal;
+  /** Tributos de monto fijo de la línea (ICBPER). Ya incluido en `total`. */
+  montoOtrosTributos: Prisma.Decimal;
   total: Prisma.Decimal;
 }
 
@@ -61,6 +63,7 @@ export interface ComprobanteConstruido {
     freeTotal: Prisma.Decimal;
     totalDescuento: Prisma.Decimal;
     totalImpuesto: Prisma.Decimal;
+    otrosTributos: Prisma.Decimal;
     total: Prisma.Decimal;
   };
   items: ItemConstruido[];
@@ -85,6 +88,7 @@ export interface ItemConstruido {
   discountAmount: Prisma.Decimal;
   taxableBase: Prisma.Decimal;
   montoImpuesto: Prisma.Decimal;
+  montoOtrosTributos: Prisma.Decimal;
   total: Prisma.Decimal;
 }
 
@@ -117,6 +121,7 @@ export class ConstructorComprobante {
     let unaffectedTotal = CERO;
     let freeTotal = CERO;
     let totalImpuesto = CERO;
+    let otrosTributos = CERO;
     let total = CERO;
 
     const items = entrada.lineas.map((linea): ItemConstruido => {
@@ -132,6 +137,8 @@ export class ConstructorComprobante {
       else unaffectedTotal = unaffectedTotal.add(baseImponible);
 
       totalImpuesto = totalImpuesto.add(linea.montoImpuesto);
+      otrosTributos = otrosTributos.add(linea.montoOtrosTributos);
+      // `linea.total` ya incluye el ICBPER: no re-sumar otrosTributos aquí.
       if (!esGratuito) total = total.add(linea.total);
 
       return {
@@ -153,6 +160,7 @@ export class ConstructorComprobante {
         discountAmount: CERO,
         taxableBase: baseImponible,
         montoImpuesto: linea.montoImpuesto,
+        montoOtrosTributos: linea.montoOtrosTributos,
         total: linea.total,
       };
     });
@@ -166,6 +174,7 @@ export class ConstructorComprobante {
       freeTotal,
       totalDescuento: CERO,
       totalImpuesto,
+      otrosTributos,
       total,
     };
 

@@ -22,6 +22,16 @@ export const ESQUEMA_IGV = {
 } as const;
 
 /**
+ * SUNAT Catalog 05: impuesto a la bolsa de plástico (ICBPER). Tributo de monto
+ * fijo por unidad (no porcentual), declarado como "otros tributos" (OTH).
+ */
+export const ESQUEMA_ICBPER = {
+  id: '7152',
+  nombre: 'ICBPER',
+  tipoTributo: 'OTH',
+} as const;
+
+/**
  * SUNAT Catalog 07 (tipo de afectación del IGV) + Catalog 16 (tipo de precio)
  * derived from our internal AfectacionImpuesto. `categoria` is UBL tax category.
  */
@@ -91,6 +101,7 @@ export interface SolicitudEmision {
     gratuito: string;
     descuento: string;
     igv: string;
+    icbper: string;
     total: string;
   };
   items: SolicitudEmisionItem[];
@@ -116,6 +127,10 @@ export interface SolicitudEmisionItem {
   porcentajeImpuesto: string;
   baseImponible: string;
   montoImpuesto: string;
+  /** ICBPER total de la línea (monto fijo × cantidad). "0.00" si no aplica. */
+  montoIcbper: string;
+  /** ICBPER por unidad (factor, ej. "0.50"). "0.00" si no aplica. */
+  factorIcbper: string;
   total: string;
 }
 

@@ -1759,6 +1759,7 @@ model ElectronicDocument {
   totalDescuento         Decimal                               @default(0) @db.Decimal(18, 2)
   chargeTotal            Decimal                               @default(0) @db.Decimal(18, 2)
   totalImpuesto          Decimal                               @db.Decimal(18, 2)
+  otrosTributos          Decimal                               @default(0) @db.Decimal(18, 2)
   total                  Decimal                               @db.Decimal(18, 2)
   issueDate              DateTime
   dueDate                DateTime?
@@ -1814,6 +1815,7 @@ model ElectronicDocumentItem {
   discountAmount         Decimal            @default(0) @db.Decimal(18, 2)
   taxableBase            Decimal            @db.Decimal(18, 2)
   montoImpuesto          Decimal            @db.Decimal(18, 2)
+  montoOtrosTributos     Decimal            @default(0) @db.Decimal(18, 2)
   total                  Decimal            @db.Decimal(18, 2)
   electronicDocument     ElectronicDocument @relation(fields: [documentoElectronicoId], references: [id], onDelete: Restrict)
 

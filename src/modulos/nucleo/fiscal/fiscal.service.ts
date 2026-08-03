@@ -187,6 +187,7 @@ export class FiscalService {
           precioUnitario: a.precioUnitario,
           valorUnitario: a.valorUnitario,
           montoImpuesto: a.montoImpuesto,
+          montoOtrosTributos: a.montoOtrosTributos,
           total: a.total,
         })),
       };
@@ -369,6 +370,7 @@ export class FiscalService {
         precioUnitario: a.precioUnitario,
         valorUnitario: a.valorUnitario,
         montoImpuesto: a.montoImpuesto,
+        montoOtrosTributos: a.montoOtrosTributos,
         total: a.total,
       })),
     };
@@ -425,6 +427,7 @@ export class FiscalService {
         freeTotal: construido.totales.freeTotal,
         totalDescuento: construido.totales.totalDescuento,
         totalImpuesto: construido.totales.totalImpuesto,
+        otrosTributos: construido.totales.otrosTributos,
         total: construido.totales.total,
         issueDate: new Date(),
         paymentTerms: 'CONTADO',
@@ -465,6 +468,7 @@ export class FiscalService {
           discountAmount: item.discountAmount,
           taxableBase: item.taxableBase,
           montoImpuesto: item.montoImpuesto,
+          montoOtrosTributos: item.montoOtrosTributos,
           total: item.total,
         },
       });
@@ -623,6 +627,7 @@ export class FiscalService {
         gratuito: doc.freeTotal.toFixed(2),
         descuento: doc.totalDescuento.toFixed(2),
         igv: doc.totalImpuesto.toFixed(2),
+        icbper: doc.otrosTributos.toFixed(2),
         total: doc.total.toFixed(2),
       },
       items: doc.articulos.map((a) => ({
@@ -637,6 +642,10 @@ export class FiscalService {
         porcentajeImpuesto: a.taxPercent.toFixed(2),
         baseImponible: a.taxableBase.toFixed(2),
         montoImpuesto: a.montoImpuesto.toFixed(2),
+        montoIcbper: a.montoOtrosTributos.toFixed(2),
+        factorIcbper: a.cantidad.isZero()
+          ? '0.00'
+          : a.montoOtrosTributos.div(a.cantidad).toFixed(2),
         total: a.total.toFixed(2),
       })),
       leyendas: doc.leyendas.map((l) => ({ codigo: l.codigo, valor: l.valor })),
