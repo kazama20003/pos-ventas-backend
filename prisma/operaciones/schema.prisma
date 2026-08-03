@@ -1266,6 +1266,7 @@ model Sale {
   subtotal               Decimal              @default(0) @db.Decimal(18, 2)
   totalDescuento         Decimal              @default(0) @db.Decimal(18, 2)
   totalImpuesto          Decimal              @default(0) @db.Decimal(18, 2)
+  otrosTributos          Decimal              @default(0) @db.Decimal(18, 2)
   total                  Decimal              @default(0) @db.Decimal(18, 2)
   totalPagado            Decimal              @default(0) @db.Decimal(18, 2)
   totalVuelto            Decimal              @default(0) @db.Decimal(18, 2)
@@ -1323,6 +1324,7 @@ model SaleItem {
   montoBruto         Decimal            @db.Decimal(18, 2)
   discountAmount     Decimal            @default(0) @db.Decimal(18, 2)
   montoImpuesto      Decimal            @default(0) @db.Decimal(18, 2)
+  montoOtrosTributos Decimal            @default(0) @db.Decimal(18, 2)
   total              Decimal            @db.Decimal(18, 2)
   metadata           Json?
   sale               Sale               @relation(fields: [inquilinoId, ventaId], references: [inquilinoId, id], onDelete: Restrict)

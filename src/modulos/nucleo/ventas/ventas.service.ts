@@ -37,6 +37,8 @@ interface LineaCalculada {
   precioUnitario: Prisma.Decimal;
   montoBruto: Prisma.Decimal;
   montoImpuesto: Prisma.Decimal;
+  /** Tributos de monto fijo (ej. ICBPER S/0.50/bolsa), sumados sobre el precio. */
+  montoOtrosTributos: Prisma.Decimal;
   total: Prisma.Decimal;
 }
 
@@ -129,6 +131,10 @@ export class VentasService {
         (acc, l) => acc.add(l.montoImpuesto),
         new Prisma.Decimal(0),
       );
+      const otrosTributos = lineas.reduce(
+        (acc, l) => acc.add(l.montoOtrosTributos),
+        new Prisma.Decimal(0),
+      );
       const total = lineas.reduce(
         (acc, l) => acc.add(l.total),
         new Prisma.Decimal(0),
@@ -168,6 +174,7 @@ export class VentasService {
           moneda: dto.moneda,
           subtotal,
           totalImpuesto,
+          otrosTributos,
           total,
           totalPagado,
           totalVuelto,
@@ -229,6 +236,8 @@ export class VentasService {
         number: correlativo.numeroFormateado,
         estado,
         subtotal: subtotal.toFixed(2),
+        totalImpuesto: totalImpuesto.toFixed(2),
+        otrosTributos: otrosTributos.toFixed(2),
         total: total.toFixed(2),
         totalPagado: totalPagado.toFixed(2),
         idempotente: false,
@@ -606,16 +615,28 @@ export class VentasService {
       }
       const precioUnitario = precio.monto;
       const montoBruto = cantidad.mul(precioUnitario);
-      const impuestoPrincipal = variante.taxes[0]?.tax;
+      const tributos = variante.taxes.map((t) => t.tax);
+      // IGV (u otro tributo porcentual): define afectación y monto de impuesto.
+      const impuestoPrincipal = tributos.find(
+        (t) => (t.tipoCalculo ?? 'PORCENTAJE') === 'PORCENTAJE',
+      );
       const tasa = impuestoPrincipal
         ? impuestoPrincipal.rate
         : new Prisma.Decimal(0);
       const montoImpuesto = impuestoPrincipal?.includedInPrice
         ? montoBruto.mul(tasa).div(new Prisma.Decimal(100).add(tasa))
         : montoBruto.mul(tasa).div(100);
-      const total = impuestoPrincipal?.includedInPrice
+      // Tributos de monto fijo por unidad (ICBPER): se suman siempre sobre el precio.
+      const montoOtrosTributos = tributos
+        .filter((t) => t.tipoCalculo === 'MONTO_FIJO')
+        .reduce(
+          (acc, t) => acc.add(t.rate.mul(cantidad)),
+          new Prisma.Decimal(0),
+        );
+      const totalPrecio = impuestoPrincipal?.includedInPrice
         ? montoBruto
         : montoBruto.add(montoImpuesto);
+      const total = totalPrecio.add(montoOtrosTributos);
       lineas.push({
         item,
         almacenId,
@@ -630,6 +651,7 @@ export class VentasService {
         precioUnitario,
         montoBruto,
         montoImpuesto,
+        montoOtrosTributos,
         total,
       });
     }
@@ -704,6 +726,7 @@ export class VentasService {
         ),
         montoBruto: linea.montoBruto,
         montoImpuesto: linea.montoImpuesto,
+        montoOtrosTributos: linea.montoOtrosTributos,
         total: linea.total,
       },
     });
