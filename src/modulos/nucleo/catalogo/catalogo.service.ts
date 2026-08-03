@@ -72,9 +72,21 @@ export class CatalogoService {
 
   async crearImpuesto(dto: CrearImpuestoDto) {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
-    return this.prisma.ejecutarEnTenant(inquilinoId, (tx) =>
-      tx.tax.create({ data: { inquilinoId, ...dto } }),
-    );
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      try {
+        return await tx.tax.create({ data: { inquilinoId, ...dto } });
+      } catch (e) {
+        if (
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002'
+        ) {
+          throw new BadRequestException(
+            `Ya existe un impuesto con el código "${dto.codigo}"`,
+          );
+        }
+        throw e;
+      }
+    });
   }
 
   async listarImpuestos() {
