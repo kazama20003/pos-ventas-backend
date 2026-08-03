@@ -119,6 +119,8 @@ export interface SolicitudEmisionItem {
   lineNumber: number;
   descripcion: string;
   codigoUnidad: string;
+  /** Código producto SUNAT (UNSPSC). "" si no está configurado (se omite). */
+  codigoProductoSunat: string;
   cantidad: string;
   valorUnitario: string;
   precioUnitario: string;

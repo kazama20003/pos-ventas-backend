@@ -360,6 +360,7 @@ model Company {
   nombreComercial   String?
   ruc               String                   @db.VarChar(11)
   sunatUbigeo       String?                  @db.VarChar(6)
+  sunatProductCodeDefault String?
   fiscalAddress     String?
   moneda            String                   @default("PEN") @db.Char(3)
   timezone          String                   @default("America/Lima")
@@ -608,6 +609,7 @@ model Category {
   codigo        String
   nombre        String
   descripcion   String?
+  sunatProductCode String?
   estado        EstadoRegistro    @default(ACTIVO)
   sortOrder     Int               @default(0)
   creadoEn      DateTime          @default(now())
@@ -1816,6 +1818,7 @@ model ElectronicDocumentItem {
   taxableBase            Decimal            @db.Decimal(18, 2)
   montoImpuesto          Decimal            @db.Decimal(18, 2)
   montoOtrosTributos     Decimal            @default(0) @db.Decimal(18, 2)
+  sunatProductCode       String?
   total                  Decimal            @db.Decimal(18, 2)
   electronicDocument     ElectronicDocument @relation(fields: [documentoElectronicoId], references: [id], onDelete: Restrict)
 

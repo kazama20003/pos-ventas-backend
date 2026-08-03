@@ -42,6 +42,7 @@ export class EmpresasService {
           nombreComercial: dto.nombreComercial ?? null,
           sunatUbigeo: dto.sunatUbigeo ?? null,
           fiscalAddress: dto.fiscalAddress ?? null,
+          sunatProductCodeDefault: dto.sunatProductCodeDefault ?? null,
           moneda: dto.moneda ?? 'PEN',
         },
         select: { id: true, razonSocial: true, ruc: true, estado: true },
@@ -92,6 +93,7 @@ export class EmpresasService {
           nombreComercial: dto.nombreComercial ?? undefined,
           sunatUbigeo: dto.sunatUbigeo ?? undefined,
           fiscalAddress: dto.fiscalAddress ?? undefined,
+          sunatProductCodeDefault: dto.sunatProductCodeDefault ?? undefined,
         },
         select: { id: true, razonSocial: true, estado: true },
       });

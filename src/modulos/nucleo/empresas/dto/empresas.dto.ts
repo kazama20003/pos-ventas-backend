@@ -35,6 +35,11 @@ export class CrearEmpresaDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20)
+  sunatProductCodeDefault?: string;
+
+  @IsOptional()
+  @IsString()
   @Length(3, 3)
   moneda?: string;
 }
@@ -59,4 +64,9 @@ export class ActualizarEmpresaDto {
   @IsString()
   @MaxLength(250)
   fiscalAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  sunatProductCodeDefault?: string;
 }

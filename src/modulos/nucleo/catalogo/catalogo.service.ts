@@ -401,6 +401,7 @@ export class CatalogoService {
             codigo: dto.codigo?.trim(),
             nombre: dto.nombre,
             descripcion: dto.descripcion,
+            sunatProductCode: dto.sunatProductCode?.trim() ?? undefined,
             padreId: dto.padreId,
             sortOrder: dto.sortOrder,
           },

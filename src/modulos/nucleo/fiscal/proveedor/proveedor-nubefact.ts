@@ -104,6 +104,7 @@ export class ProveedorNubefact implements ProveedorFacturacion {
       enviar_automaticamente_a_la_sunat: true,
       items: s.items.map((i) => ({
         unidad_de_medida: i.codigoUnidad,
+        codigo_producto_sunat: i.codigoProductoSunat || undefined,
         descripcion: i.descripcion,
         cantidad: Number(i.cantidad),
         valor_unitario: Number(i.valorUnitario),

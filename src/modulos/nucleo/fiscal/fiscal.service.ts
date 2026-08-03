@@ -69,7 +69,27 @@ export class FiscalService {
       const venta = await tx.sale.findFirst({
         where: { id: dto.ventaId, inquilinoId },
         include: {
-          articulos: { orderBy: { lineNumber: 'asc' } },
+          articulos: {
+            orderBy: { lineNumber: 'asc' },
+            include: {
+              variant: {
+                select: {
+                  sunatProductCode: true,
+                  product: {
+                    select: {
+                      categories: {
+                        where: { isPrimary: true },
+                        select: {
+                          category: { select: { sunatProductCode: true } },
+                        },
+                        take: 1,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
           company: true,
           customer: true,
         },
@@ -182,6 +202,7 @@ export class FiscalService {
           skuSnapshot: a.sku,
           nombreSnapshot: a.descripcion,
           unitCodeSnapshot: a.sunatUnitCode,
+          sunatProductCode: a.sunatProductCode,
           afectacion: a.affectation,
           cantidad: a.cantidad,
           precioUnitario: a.precioUnitario,
@@ -365,6 +386,12 @@ export class FiscalService {
         skuSnapshot: a.skuSnapshot,
         nombreSnapshot: a.nombreSnapshot,
         unitCodeSnapshot: a.unitCodeSnapshot,
+        // Herencia: producto → categoría principal → default de la empresa.
+        sunatProductCode:
+          a.variant?.sunatProductCode ||
+          a.variant?.product.categories[0]?.category.sunatProductCode ||
+          venta.company.sunatProductCodeDefault ||
+          null,
         afectacion: a.AfectacionImpuesto,
         cantidad: a.cantidad,
         precioUnitario: a.precioUnitario,
@@ -456,6 +483,7 @@ export class FiscalService {
           sku: item.sku,
           descripcion: item.descripcion,
           sunatUnitCode: item.sunatUnitCode,
+          sunatProductCode: item.sunatProductCode,
           affectation: item.affectation,
           taxSchemeId: item.taxSchemeId,
           taxSchemeName: item.taxSchemeName,
@@ -634,6 +662,7 @@ export class FiscalService {
         lineNumber: a.lineNumber,
         descripcion: a.descripcion,
         codigoUnidad: a.sunatUnitCode,
+        codigoProductoSunat: a.sunatProductCode ?? '',
         cantidad: a.cantidad.toFixed(6),
         valorUnitario: a.valorUnitario.toFixed(6),
         precioUnitario: a.precioUnitario.toFixed(6),
@@ -687,7 +716,24 @@ type DocEstado = Prisma.ElectronicDocumentGetPayload<object>['estado'];
 
 type SaleConDetalle = Prisma.SaleGetPayload<{
   include: {
-    articulos: true;
+    articulos: {
+      include: {
+        variant: {
+          select: {
+            sunatProductCode: true;
+            product: {
+              select: {
+                categories: {
+                  where: { isPrimary: true };
+                  select: { category: { select: { sunatProductCode: true } } };
+                  take: 1;
+                };
+              };
+            };
+          };
+        };
+      };
+    };
     company: true;
     customer: true;
   };

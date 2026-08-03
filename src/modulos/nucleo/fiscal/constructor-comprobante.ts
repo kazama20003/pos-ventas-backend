@@ -21,6 +21,8 @@ export interface LineaVenta {
   skuSnapshot: string | null;
   nombreSnapshot: string;
   unitCodeSnapshot: string | null;
+  /** Código producto SUNAT (UNSPSC) ya resuelto por herencia. null = omitir. */
+  sunatProductCode: string | null;
   afectacion: AfectacionImpuesto;
   cantidad: Prisma.Decimal;
   precioUnitario: Prisma.Decimal;
@@ -76,6 +78,7 @@ export interface ItemConstruido {
   sku: string | null;
   descripcion: string;
   sunatUnitCode: string;
+  sunatProductCode: string | null;
   affectation: AfectacionImpuesto;
   taxSchemeId: string;
   taxSchemeName: string;
@@ -147,6 +150,7 @@ export class ConstructorComprobante {
         sku: linea.skuSnapshot,
         descripcion: linea.nombreSnapshot,
         sunatUnitCode: linea.unitCodeSnapshot ?? 'NIU',
+        sunatProductCode: linea.sunatProductCode,
         affectation: linea.afectacion,
         taxSchemeId: ESQUEMA_IGV.id,
         taxSchemeName: ESQUEMA_IGV.nombre,

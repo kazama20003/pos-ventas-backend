@@ -71,6 +71,11 @@ export class CrearCategoriaDto {
   descripcion?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  sunatProductCode?: string;
+
+  @IsOptional()
   @IsUUID()
   padreId?: string;
 
@@ -384,6 +389,11 @@ export class ActualizarCategoriaDto {
   @IsOptional()
   @IsString()
   descripcion?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  sunatProductCode?: string;
 
   @IsOptional()
   @IsUUID()
