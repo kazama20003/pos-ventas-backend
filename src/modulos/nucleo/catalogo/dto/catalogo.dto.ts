@@ -30,6 +30,22 @@ export enum AfectacionImpuestoDto {
   EXPORTACION = 'EXPORTACION',
 }
 
+export enum TipoCalculoImpuestoDto {
+  PORCENTAJE = 'PORCENTAJE',
+  MONTO_FIJO = 'MONTO_FIJO',
+}
+
+export enum TipoTributoDto {
+  IGV = 'IGV',
+  ISC = 'ISC',
+  ICBPER = 'ICBPER',
+  EXONERADO = 'EXONERADO',
+  INAFECTO = 'INAFECTO',
+  EXPORTACION = 'EXPORTACION',
+  GRATUITO = 'GRATUITO',
+  OTRO = 'OTRO',
+}
+
 export enum TipoCodigoBarrasDto {
   EAN13 = 'EAN13',
   EAN8 = 'EAN8',
@@ -109,6 +125,16 @@ export class CrearImpuestoDto {
   @IsOptional()
   @IsBoolean()
   includedInPrice?: boolean;
+
+  // PORCENTAJE (rate = %) o MONTO_FIJO (rate = soles por unidad, ej. ICBPER).
+  @IsOptional()
+  @IsEnum(TipoCalculoImpuestoDto)
+  tipoCalculo?: TipoCalculoImpuestoDto;
+
+  // Tributo SUNAT (IGV, ISC, ICBPER…) para separar subtotales en el comprobante.
+  @IsOptional()
+  @IsEnum(TipoTributoDto)
+  tipoTributo?: TipoTributoDto;
 }
 
 export class CodigoBarrasDto {
@@ -134,6 +160,12 @@ export class CrearVarianteProductoDto {
   @IsString()
   @IsNotEmpty()
   sku?: string;
+
+  // Código de producto SUNAT (Catálogo 25 / UNSPSC). Opcional para el XML.
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  sunatProductCode?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -372,6 +404,11 @@ export class ActualizarVarianteDto {
   @IsString()
   @IsNotEmpty()
   sku?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  sunatProductCode?: string;
 
   @IsOptional()
   @IsUUID()

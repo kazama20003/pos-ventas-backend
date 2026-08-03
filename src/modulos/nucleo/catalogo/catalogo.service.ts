@@ -542,6 +542,7 @@ export class CatalogoService {
                 inquilinoId,
                 unidadMedidaId: variante.unidadMedidaId,
                 sku: skus[index],
+                sunatProductCode: variante.sunatProductCode ?? null,
                 nombre: variante.nombre,
                 cost: variante.cost ?? 0,
                 attributes: variante.atributos ?? undefined,
@@ -1018,6 +1019,7 @@ export class CatalogoService {
             productoId,
             unidadMedidaId: dto.unidadMedidaId,
             sku,
+            sunatProductCode: dto.sunatProductCode ?? null,
             nombre: dto.nombre,
             cost: dto.cost ?? 0,
             attributes: dto.atributos ?? undefined,
@@ -1096,6 +1098,7 @@ export class CatalogoService {
           data: {
             nombre: dto.nombre,
             sku: dto.sku?.trim(),
+            sunatProductCode: dto.sunatProductCode?.trim() ?? undefined,
             unidadMedidaId: dto.unidadMedidaId,
             cost: dto.cost,
             attributes: dto.atributos ?? undefined,

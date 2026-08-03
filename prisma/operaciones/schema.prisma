@@ -64,6 +64,25 @@ enum AfectacionImpuesto {
   EXPORTACION
 }
 
+/// Cómo se calcula un tributo sobre la línea.
+/// PORCENTAJE: rate es un % (IGV 18). MONTO_FIJO: rate es soles por unidad (ICBPER 0.50).
+enum TipoCalculoImpuesto {
+  PORCENTAJE
+  MONTO_FIJO
+}
+
+/// Tipo de tributo SUNAT (Catálogo 05) para separar subtotales en el comprobante.
+enum TipoTributo {
+  IGV
+  ISC
+  ICBPER
+  EXONERADO
+  INAFECTO
+  EXPORTACION
+  GRATUITO
+  OTRO
+}
+
 enum TipoMovimientoInventario {
   APERTURA
   RECEPCION_COMPRA
@@ -641,6 +660,8 @@ model Tax {
   affectation      AfectacionImpuesto
   rate             Decimal             @db.Decimal(7, 4)
   includedInPrice  Boolean             @default(true)
+  tipoCalculo      TipoCalculoImpuesto @default(PORCENTAJE)
+  tipoTributo      TipoTributo         @default(IGV)
   vigenteDesde     DateTime?
   vigenteHasta     DateTime?
   estado           EstadoRegistro      @default(ACTIVO)
@@ -692,6 +713,7 @@ model ProductVariant {
   productoId         String                  @db.Uuid
   unidadMedidaId     String                  @db.Uuid
   sku                String
+  sunatProductCode   String?
   nombre             String
   attributes         Json?
   cost               Decimal                 @default(0) @db.Decimal(18, 6)
