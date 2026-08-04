@@ -36,4 +36,10 @@ export class AjustarStockDto {
   @IsOptional()
   @IsString()
   motivo?: string;
+
+  // Clave de idempotencia generada por el cliente: reintentos con la misma
+  // clave no re-aplican el ajuste. Opcional por compatibilidad.
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
 }

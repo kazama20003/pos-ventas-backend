@@ -128,6 +128,12 @@ export class SucursalesService {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       await this.exigirSucursal(tx, inquilinoId, dto.sucursalId);
+      // Lock de la sucursal: serializa dos altas concurrentes para que el
+      // "primer almacén = predeterminado" no marque dos predeterminados.
+      await tx.$queryRaw`
+        SELECT "id" FROM "Branch"
+        WHERE "id" = ${dto.sucursalId}::uuid AND "inquilinoId" = ${inquilinoId}::uuid
+        FOR UPDATE`;
       await this.exigirUnico(
         tx.warehouse,
         inquilinoId,

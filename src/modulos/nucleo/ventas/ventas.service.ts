@@ -39,6 +39,8 @@ interface LineaCalculada {
   montoImpuesto: Prisma.Decimal;
   /** Tributos de monto fijo (ej. ICBPER S/0.50/bolsa), sumados sobre el precio. */
   montoOtrosTributos: Prisma.Decimal;
+  /** El impuesto principal ya está contenido en precioUnitario (IGV incluido). */
+  impuestoIncluido: boolean;
   total: Prisma.Decimal;
 }
 
@@ -192,7 +194,7 @@ export class VentasService {
           data: {
             inquilinoId,
             ventaId: venta.id,
-            idempotencyKey: `${dto.idempotencyKey}:pago:${pago.method}:${pago.referencia ?? ''}:${pago.monto}`,
+            idempotencyKey: `${dto.idempotencyKey}:pago:${indice}`,
             method: pago.method,
             monto: new Prisma.Decimal(pago.monto),
             moneda: dto.moneda,
@@ -358,6 +360,12 @@ export class VentasService {
         venta.sucursalId,
         venta.sesionCajaId,
       );
+      await this.exigirAlmacenesDeSucursal(
+        tx,
+        inquilinoId,
+        venta.sucursalId,
+        dto.items.map((item) => item.almacenId),
+      );
 
       const saleItems = await tx.saleItem.findMany({
         where: {
@@ -368,6 +376,26 @@ export class VentasService {
         include: { variant: { select: { isStockTracked: true } } },
       });
       const porId = new Map(saleItems.map((si) => [si.id, si]));
+
+      // Cantidades ya devueltas por línea en devoluciones vigentes (no
+      // rechazadas ni canceladas): el tope es lo vendido MENOS lo ya devuelto,
+      // si no, varias devoluciones parciales devolverían más de lo vendido.
+      const devueltoPrevio = await tx.saleRefundItem.groupBy({
+        by: ['itemVentaId'],
+        where: {
+          inquilinoId,
+          ventaId: dto.ventaId,
+          itemVentaId: { in: dto.items.map((i) => i.itemVentaId) },
+          saleRefund: { estado: { notIn: ['RECHAZADA', 'CANCELADA'] } },
+        },
+        _sum: { cantidad: true },
+      });
+      const yaDevuelto = new Map(
+        devueltoPrevio.map((g) => [
+          g.itemVentaId,
+          g._sum.cantidad ?? new Prisma.Decimal(0),
+        ]),
+      );
 
       let subtotal = new Prisma.Decimal(0);
       let totalImpuesto = new Prisma.Decimal(0);
@@ -380,9 +408,11 @@ export class VentasService {
           );
         }
         const cantidad = new Prisma.Decimal(item.cantidad);
-        if (cantidad.gt(si.cantidad)) {
+        const previo = yaDevuelto.get(item.itemVentaId) ?? new Prisma.Decimal(0);
+        if (cantidad.add(previo).gt(si.cantidad)) {
+          const disponible = si.cantidad.sub(previo);
           throw new ConflictException(
-            `La cantidad devuelta supera la vendida en la línea ${si.lineNumber}`,
+            `La cantidad devuelta supera lo pendiente en la línea ${si.lineNumber} (disponible: ${disponible.toFixed(2)})`,
           );
         }
         const factor = cantidad.div(si.cantidad);
@@ -445,6 +475,22 @@ export class VentasService {
       }
 
       if (dto.devolverEfectivo && dto.sesionCajaId) {
+        // La sesión debe existir, estar ABIERTA y ser de la sucursal de la
+        // venta; si no, el efectivo saldría de una caja cerrada o ajena.
+        const sesion = await tx.cashSession.findFirst({
+          where: {
+            id: dto.sesionCajaId,
+            inquilinoId,
+            sucursalId: venta.sucursalId,
+            estado: 'ABIERTA',
+          },
+          select: { id: true },
+        });
+        if (!sesion) {
+          throw new ConflictException(
+            'La sesión de caja no existe, está cerrada o no pertenece a la sucursal de la venta',
+          );
+        }
         await tx.cashMovement.create({
           data: {
             inquilinoId,
@@ -587,6 +633,36 @@ export class VentasService {
     return this.almacenPredeterminado(tx, inquilinoId, sucursalId);
   }
 
+  /**
+   * Verifica que cada almacén explícito de línea pertenezca a la sucursal y
+   * esté activo. Ignora los `null/undefined` (esos resuelven al default).
+   */
+  private async exigirAlmacenesDeSucursal(
+    tx: TxPrisma,
+    inquilinoId: string,
+    sucursalId: string,
+    almacenIds: (string | undefined)[],
+  ): Promise<void> {
+    const pedidos = [...new Set(almacenIds.filter((a): a is string => !!a))];
+    if (pedidos.length === 0) return;
+    const validos = await tx.warehouse.findMany({
+      where: {
+        inquilinoId,
+        sucursalId,
+        estado: 'ACTIVO',
+        id: { in: pedidos },
+      },
+      select: { id: true },
+    });
+    const ok = new Set(validos.map((w) => w.id));
+    const invalido = pedidos.find((a) => !ok.has(a));
+    if (invalido) {
+      throw new ConflictException(
+        `El almacén ${invalido} no pertenece a la sucursal o está archivado`,
+      );
+    }
+  }
+
   private async calcularLineas(
     tx: TxPrisma,
     inquilinoId: string,
@@ -616,6 +692,15 @@ export class VentasService {
       },
     });
     const porId = new Map(variantes.map((variante) => [variante.id, variante]));
+
+    // Un almacén explícito por línea debe pertenecer a la sucursal de la venta
+    // y estar activo; si no, la venta descontaría stock de otra sucursal.
+    await this.exigirAlmacenesDeSucursal(
+      tx,
+      inquilinoId,
+      dto.sucursalId,
+      dto.items.map((item) => item.almacenId),
+    );
 
     // Secuencial: comparten una sola conexión pg dentro de la transacción;
     // en paralelo dispararía el DeprecationWarning de pg.
@@ -708,6 +793,7 @@ export class VentasService {
         montoBruto,
         montoImpuesto,
         montoOtrosTributos,
+        impuestoIncluido: !!impuestoPrincipal?.includedInPrice,
         total,
       });
     }
@@ -777,9 +863,11 @@ export class VentasService {
         AfectacionImpuesto: linea.afectacionImpuesto,
         cantidad: linea.cantidad,
         precioUnitario: linea.precioUnitario,
-        valorUnitario: linea.precioUnitario.sub(
-          linea.montoImpuesto.div(linea.cantidad),
-        ),
+        // Valor unitario = precio sin el IGV. Solo se resta el impuesto cuando
+        // venía incluido en el precio; si no, el precio ya ES el valor.
+        valorUnitario: linea.impuestoIncluido
+          ? linea.precioUnitario.sub(linea.montoImpuesto.div(linea.cantidad))
+          : linea.precioUnitario,
         montoBruto: linea.montoBruto,
         montoImpuesto: linea.montoImpuesto,
         montoOtrosTributos: linea.montoOtrosTributos,

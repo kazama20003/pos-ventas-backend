@@ -266,11 +266,19 @@ export class CajaService {
     const { inquilinoId, identidadUsuarioId } =
       this.contexto.obtenerObligatorio();
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
-      const sesion = await tx.cashSession.findFirst({
-        where: { id: dto.sesionCajaId, inquilinoId },
-        select: { id: true, estado: true, sucursalId: true },
-      });
-      if (!sesion) throw new NotFoundException('Sesión de caja no encontrada');
+      // FOR UPDATE serializa contra un cierre concurrente: si la sesión se está
+      // cerrando, este movimiento espera y luego ve CONCILIADA (rechazado); sin
+      // el lock, el efectivo entraría fuera del arqueo ya conciliado.
+      const filas = await tx.$queryRaw<
+        { estado: string; sucursalId: string }[]
+      >`
+        SELECT "estado", "sucursalId" FROM "CashSession"
+        WHERE "id" = ${dto.sesionCajaId}::uuid AND "inquilinoId" = ${inquilinoId}::uuid
+        FOR UPDATE`;
+      if (filas.length === 0) {
+        throw new NotFoundException('Sesión de caja no encontrada');
+      }
+      const sesion = filas[0];
       if (sesion.estado !== 'ABIERTA') {
         throw new ConflictException(
           `La sesión no está abierta (estado ${sesion.estado})`,

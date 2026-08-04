@@ -128,6 +128,37 @@ export class InventarioService {
       if (!variante.isStockTracked)
         throw new ConflictException('La variante no controla inventario');
 
+      // Idempotencia: con clave del cliente, un reintento no re-aplica el
+      // ajuste; devuelve el saldo actual. Sin clave, se cae al comportamiento
+      // previo (no idempotente) usando un sufijo único.
+      const idempotencyKey = dto.idempotencyKey
+        ? `ajuste:${dto.idempotencyKey}`
+        : `ajuste:${dto.varianteId}:${dto.almacenId}:${randomUUID()}`;
+      if (dto.idempotencyKey) {
+        const previo = await tx.inventoryLedgerEntry.findUnique({
+          where: {
+            inquilinoId_idempotencyKey: { inquilinoId, idempotencyKey },
+          },
+          select: { id: true },
+        });
+        if (previo) {
+          const saldoActual = await tx.stockBalance.findFirst({
+            where: {
+              inquilinoId,
+              almacenId: dto.almacenId,
+              varianteId: dto.varianteId,
+            },
+            select: {
+              id: true,
+              enStock: true,
+              available: true,
+              costoPromedio: true,
+            },
+          });
+          return { ...saldoActual, asientoId: previo.id, idempotente: true };
+        }
+      }
+
       const esEntrada = dto.tipo === TipoAjusteStock.ENTRADA;
       const cantidad = new Prisma.Decimal(dto.cantidad);
 
@@ -141,8 +172,6 @@ export class InventarioService {
       const saldo = lock.length
         ? await tx.stockBalance.findUnique({ where: { id: lock[0].id } })
         : null;
-
-      const idempotencyKey = `ajuste:${dto.varianteId}:${dto.almacenId}:${Date.now()}`;
 
       // Sin saldo previo: solo tiene sentido una entrada (crea el saldo).
       if (!saldo) {
@@ -1096,13 +1125,15 @@ export class InventarioService {
       );
 
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
-      // Idempotencia: reusar la clave sobre el asiento de salida.
-      const yaExiste = await tx.inventoryLedgerEntry.findUnique({
+      // Idempotencia: los asientos de salida se crean con la clave
+      // `transf-salida:${idempotencyKey}:${varianteId}` (una por variante), así
+      // que se busca por prefijo. Buscar la clave exacta sin sufijo nunca
+      // acertaba y rompía la idempotencia (reintento → unique violation).
+      const yaExiste = await tx.inventoryLedgerEntry.findFirst({
         where: {
-          inquilinoId_idempotencyKey: {
-            inquilinoId,
-            idempotencyKey: `transf-salida:${dto.idempotencyKey}`,
-          },
+          inquilinoId,
+          movementType: 'TRANSFERENCIA_SALIDA',
+          idempotencyKey: { startsWith: `transf-salida:${dto.idempotencyKey}:` },
         },
         select: { correlationId: true },
       });
