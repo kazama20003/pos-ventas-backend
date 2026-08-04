@@ -75,6 +75,14 @@ export class CrearCajaDto {
   @IsString()
   @MaxLength(160)
   nombre!: string;
+
+  /**
+   * Almacén físico del que la caja descuenta stock en sus ventas. Opcional:
+   * si se omite, la venta cae al almacén predeterminado de la sucursal.
+   */
+  @IsOptional()
+  @IsUUID()
+  almacenId?: string;
 }
 
 export class ActualizarSucursalDto {
@@ -120,4 +128,9 @@ export class ActualizarCajaDto {
   @IsString()
   @MaxLength(160)
   nombre?: string;
+
+  /** Reasigna el almacén de origen de stock de la caja. `null` lo desvincula. */
+  @IsOptional()
+  @IsUUID()
+  almacenId?: string | null;
 }

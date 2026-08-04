@@ -270,14 +270,29 @@ export class SucursalesService {
         { sucursalId: dto.sucursalId, codigo: dto.codigo },
         'caja',
       );
+      if (dto.almacenId) {
+        await this.exigirAlmacenDeSucursal(
+          tx,
+          inquilinoId,
+          dto.sucursalId,
+          dto.almacenId,
+        );
+      }
       return tx.cashRegister.create({
         data: {
           inquilinoId,
           sucursalId: dto.sucursalId,
           codigo: dto.codigo,
           nombre: dto.nombre,
+          almacenId: dto.almacenId ?? null,
         },
-        select: { id: true, codigo: true, nombre: true, estado: true },
+        select: {
+          id: true,
+          codigo: true,
+          nombre: true,
+          almacenId: true,
+          estado: true,
+        },
       });
     });
   }
@@ -293,6 +308,7 @@ export class SucursalesService {
           sucursalId: true,
           codigo: true,
           nombre: true,
+          almacenId: true,
           estado: true,
         },
       }),
@@ -304,15 +320,33 @@ export class SucursalesService {
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       const existe = await tx.cashRegister.findFirst({
         where: { id, inquilinoId },
-        select: { id: true },
+        select: { id: true, sucursalId: true },
       });
       if (!existe) throw new NotFoundException('Caja no encontrada');
+      if (dto.almacenId) {
+        await this.exigirAlmacenDeSucursal(
+          tx,
+          inquilinoId,
+          existe.sucursalId,
+          dto.almacenId,
+        );
+      }
       return tx.cashRegister.update({
         where: { id },
         data: {
           ...(dto.nombre !== undefined ? { nombre: dto.nombre } : {}),
+          // `null` desvincula; `undefined` deja el almacén como está.
+          ...(dto.almacenId !== undefined
+            ? { almacenId: dto.almacenId }
+            : {}),
         },
-        select: { id: true, codigo: true, nombre: true, estado: true },
+        select: {
+          id: true,
+          codigo: true,
+          nombre: true,
+          almacenId: true,
+          estado: true,
+        },
       });
     });
   }
@@ -343,6 +377,23 @@ export class SucursalesService {
       select: { id: true },
     });
     if (!sucursal) throw new NotFoundException('Sucursal no encontrada');
+  }
+
+  /** El almacén debe existir, pertenecer a la sucursal y estar activo. */
+  private async exigirAlmacenDeSucursal(
+    tx: Prisma.TransactionClient,
+    inquilinoId: string,
+    sucursalId: string,
+    almacenId: string,
+  ) {
+    const almacen = await tx.warehouse.findFirst({
+      where: { id: almacenId, inquilinoId, sucursalId, estado: 'ACTIVO' },
+      select: { id: true },
+    });
+    if (!almacen)
+      throw new ConflictException(
+        'El almacén no existe, está archivado o no pertenece a la sucursal',
+      );
   }
 
   private async exigirUnico(

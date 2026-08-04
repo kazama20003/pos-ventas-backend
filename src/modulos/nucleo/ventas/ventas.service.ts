@@ -340,16 +340,23 @@ export class VentasService {
 
       const venta = await tx.sale.findFirst({
         where: { id: dto.ventaId, inquilinoId },
-        select: { id: true, estado: true, moneda: true, sucursalId: true },
+        select: {
+          id: true,
+          estado: true,
+          moneda: true,
+          sucursalId: true,
+          sesionCajaId: true,
+        },
       });
       if (!venta) throw new NotFoundException('Venta no encontrada');
       if (venta.estado === 'ANULADA') {
         throw new ConflictException('No se puede devolver una venta anulada');
       }
-      const almacenDefault = await this.almacenPredeterminado(
+      const almacenDefault = await this.resolverAlmacen(
         tx,
         inquilinoId,
         venta.sucursalId,
+        venta.sesionCajaId,
       );
 
       const saleItems = await tx.saleItem.findMany({
@@ -529,7 +536,55 @@ export class VentasService {
       },
       select: { id: true },
     });
-    return w?.id ?? null;
+    if (w) {
+      return w.id;
+    }
+    // Sin default marcado: si la sucursal tiene un único almacén activo,
+    // úsalo (caso común, sin ambigüedad). Con varios exige elección explícita.
+    const activos = await tx.warehouse.findMany({
+      where: { inquilinoId, sucursalId, estado: 'ACTIVO' },
+      select: { id: true },
+      take: 2,
+    });
+    return activos.length === 1 ? activos[0].id : null;
+  }
+
+  /**
+   * Resuelve el almacén de origen del stock para una venta/devolución.
+   * Prioridad: almacén de la caja de la sesión → predeterminado de la
+   * sucursal → único almacén activo. La caja manda porque es el punto físico
+   * desde el que se despacha; así una sucursal con varios almacenes no exige
+   * marcar default ni mandar `almacenId` por línea.
+   */
+  private async resolverAlmacen(
+    tx: TxPrisma,
+    inquilinoId: string,
+    sucursalId: string,
+    sesionCajaId?: string | null,
+  ): Promise<string | null> {
+    if (sesionCajaId) {
+      const sesion = await tx.cashSession.findFirst({
+        where: { id: sesionCajaId, inquilinoId },
+        select: {
+          cashRegister: {
+            select: {
+              almacen: {
+                select: { id: true, sucursalId: true, estado: true },
+              },
+            },
+          },
+        },
+      });
+      const almacen = sesion?.cashRegister?.almacen;
+      if (
+        almacen &&
+        almacen.estado === 'ACTIVO' &&
+        almacen.sucursalId === sucursalId
+      ) {
+        return almacen.id;
+      }
+    }
+    return this.almacenPredeterminado(tx, inquilinoId, sucursalId);
   }
 
   private async calcularLineas(
@@ -537,11 +592,12 @@ export class VentasService {
     inquilinoId: string,
     dto: CrearVentaDto,
   ): Promise<LineaCalculada[]> {
-    // Almacén por defecto de la sucursal (relleno cuando la línea no lo trae).
-    const almacenDefault = await this.almacenPredeterminado(
+    // Almacén de relleno cuando la línea no trae uno: caja → default sucursal.
+    const almacenDefault = await this.resolverAlmacen(
       tx,
       inquilinoId,
       dto.sucursalId,
+      dto.sesionCajaId,
     );
     const variantes = await tx.productVariant.findMany({
       where: {

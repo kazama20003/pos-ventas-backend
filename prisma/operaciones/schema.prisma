@@ -430,6 +430,7 @@ model Warehouse {
   lots                  InventoryLot[]
   serials               InventorySerial[]
   receipts              PurchaseReceipt[]
+  cajas                 CashRegister[]
 
   @@unique([inquilinoId, sucursalId, codigo])
   @@unique([inquilinoId, id])
@@ -442,10 +443,12 @@ model CashRegister {
   sucursalId    String         @db.Uuid
   codigo        String
   nombre        String
+  almacenId     String?        @db.Uuid
   estado        EstadoRegistro @default(ACTIVO)
   creadoEn      DateTime       @default(now())
   actualizadoEn DateTime       @updatedAt
   branch        Branch         @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  almacen       Warehouse?     @relation(fields: [inquilinoId, almacenId], references: [inquilinoId, id], onDelete: Restrict)
   terminales    Terminal[]
   sessions      CashSession[]
 
