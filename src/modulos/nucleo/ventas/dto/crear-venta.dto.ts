@@ -71,6 +71,15 @@ export class CrearVentaDto {
   @IsUUID()
   clienteId?: string;
 
+  /**
+   * Promociones que el cajero confirmó aplicar. El backend las revalida
+   * (vigencia, estado, empresa, alcance) y aplica el mejor beneficio por línea.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  promocionIds?: string[];
+
   @IsString()
   @Length(3, 3)
   moneda!: string;

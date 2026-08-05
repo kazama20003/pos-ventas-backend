@@ -15,6 +15,8 @@ import {
 import { CrearDevolucionDto } from './dto/crear-devolucion.dto';
 import { ListarVentasDto } from './dto/listar-ventas.dto';
 import { SincronizarVentasDto } from './dto/sincronizar-ventas.dto';
+import { PromocionesService } from '../promociones/promociones.service';
+import { MotorPromociones } from '../promociones/motor-promociones';
 
 type TxPrisma = Prisma.TransactionClient;
 
@@ -42,6 +44,17 @@ interface LineaCalculada {
   montoOtrosTributos: Prisma.Decimal;
   /** El impuesto principal ya está contenido en precioUnitario (IGV incluido). */
   impuestoIncluido: boolean;
+  /** Descuento de promoción aplicado a la línea (sobre la base bruta). */
+  descuentoMonto: Prisma.Decimal;
+  /** Promoción que originó el descuento (trazabilidad); null si no hubo. */
+  descuentoPromocion: {
+    promocionId: string;
+    codigo: string;
+    descripcion: string;
+    rate: Prisma.Decimal | null;
+  } | null;
+  /** Valor unitario neto (sin IGV y ya con el descuento aplicado). */
+  valorUnitario: Prisma.Decimal;
   total: Prisma.Decimal;
 }
 
@@ -51,6 +64,8 @@ export class VentasService {
     private readonly prisma: CorePrismaService,
     private readonly contexto: ContextoSolicitudService,
     private readonly autorizacion: AutorizacionSucursalService,
+    private readonly promociones: PromocionesService,
+    private readonly motor: MotorPromociones,
   ) {}
 
   /**
@@ -243,8 +258,13 @@ export class VentasService {
 
       await this.exigirContextoComercial(tx, inquilinoId, dto);
       const lineas = await this.calcularLineas(tx, inquilinoId, dto);
+      // Base ya descontada: mantiene la identidad total = subtotal (+IGV) + otros.
       const subtotal = lineas.reduce(
-        (acc, l) => acc.add(l.montoBruto),
+        (acc, l) => acc.add(l.montoBruto).sub(l.descuentoMonto),
+        new Prisma.Decimal(0),
+      );
+      const totalDescuento = lineas.reduce(
+        (acc, l) => acc.add(l.descuentoMonto),
         new Prisma.Decimal(0),
       );
       const totalImpuesto = lineas.reduce(
@@ -293,6 +313,7 @@ export class VentasService {
           estado,
           moneda: dto.moneda,
           subtotal,
+          totalDescuento,
           totalImpuesto,
           otrosTributos,
           total,
@@ -305,6 +326,21 @@ export class VentasService {
 
       for (const linea of lineas) {
         await this.registrarLinea(tx, inquilinoId, venta.id, linea);
+      }
+
+      // Contabiliza el uso de cada promoción aplicada (una vez por venta).
+      const promosUsadas = [
+        ...new Set(
+          lineas
+            .map((l) => l.descuentoPromocion?.promocionId)
+            .filter((id): id is string => !!id),
+        ),
+      ];
+      if (promosUsadas.length) {
+        await tx.promotion.updateMany({
+          where: { inquilinoId, id: { in: promosUsadas } },
+          data: { usoActual: { increment: 1 } },
+        });
       }
 
       for (const [indice, pago] of (dto.pagos ?? []).entries()) {
@@ -820,6 +856,15 @@ export class VentasService {
       dto.items.map((item) => item.almacenId),
     );
 
+    // Promociones que el cajero confirmó: se revalidan aquí (vigencia, estado,
+    // empresa, scope). La caja solo propone; el servidor decide el descuento.
+    const promos = await this.promociones.cargarVigentesParaVenta(
+      tx,
+      inquilinoId,
+      dto.empresaId,
+      dto.promocionIds ?? [],
+    );
+
     // Secuencial: comparten una sola conexión pg dentro de la transacción;
     // en paralelo dispararía el DeprecationWarning de pg.
     const lineas: LineaCalculada[] = [];
@@ -874,17 +919,33 @@ export class VentasService {
       }
       const precioUnitario = precio.monto;
       const montoBruto = cantidad.mul(precioUnitario);
+
+      // Descuento de promoción sobre la base bruta (antes del IGV). El mejor
+      // beneficio aplicable a esta línea; null si ninguna promo la alcanza.
+      const descuento = promos.length
+        ? this.motor.mejorDescuento(promos, {
+            productoId: variante.productoId,
+            cantidad,
+            precioUnitario,
+            montoBruto,
+          })
+        : null;
+      const descuentoMonto = descuento?.monto ?? new Prisma.Decimal(0);
+      const baseNeta = montoBruto.sub(descuentoMonto);
+
       const tributos = variante.taxes.map((t) => t.tax);
-      // IGV (u otro tributo porcentual): define afectación y monto de impuesto.
+      // IGV (u otro tributo porcentual): define afectación y monto de impuesto,
+      // calculado SOBRE la base ya descontada.
       const impuestoPrincipal = tributos.find(
         (t) => (t.tipoCalculo ?? 'PORCENTAJE') === 'PORCENTAJE',
       );
+      const incluido = !!impuestoPrincipal?.includedInPrice;
       const tasa = impuestoPrincipal
         ? impuestoPrincipal.rate
         : new Prisma.Decimal(0);
-      const montoImpuesto = impuestoPrincipal?.includedInPrice
-        ? montoBruto.mul(tasa).div(new Prisma.Decimal(100).add(tasa))
-        : montoBruto.mul(tasa).div(100);
+      const montoImpuesto = incluido
+        ? baseNeta.mul(tasa).div(new Prisma.Decimal(100).add(tasa))
+        : baseNeta.mul(tasa).div(100);
       // Tributos de monto fijo por unidad (ICBPER): se suman siempre sobre el precio.
       const montoOtrosTributos = tributos
         .filter((t) => t.tipoCalculo === 'MONTO_FIJO')
@@ -892,10 +953,14 @@ export class VentasService {
           (acc, t) => acc.add(t.rate.mul(cantidad)),
           new Prisma.Decimal(0),
         );
-      const totalPrecio = impuestoPrincipal?.includedInPrice
-        ? montoBruto
-        : montoBruto.add(montoImpuesto);
+      const totalPrecio = incluido ? baseNeta : baseNeta.add(montoImpuesto);
       const total = totalPrecio.add(montoOtrosTributos);
+      // Valor unitario = base neta SIN IGV por unidad (para el comprobante).
+      const valorNeto = incluido ? baseNeta.sub(montoImpuesto) : baseNeta;
+      const valorUnitario = cantidad.gt(0)
+        ? valorNeto.div(cantidad)
+        : new Prisma.Decimal(0);
+
       lineas.push({
         item,
         almacenId,
@@ -911,7 +976,17 @@ export class VentasService {
         montoBruto,
         montoImpuesto,
         montoOtrosTributos,
-        impuestoIncluido: !!impuestoPrincipal?.includedInPrice,
+        impuestoIncluido: incluido,
+        descuentoMonto,
+        descuentoPromocion: descuento
+          ? {
+              promocionId: descuento.promocionId,
+              codigo: descuento.codigo,
+              descripcion: descuento.descripcion,
+              rate: descuento.rate,
+            }
+          : null,
+        valorUnitario,
         total,
       });
     }
@@ -969,7 +1044,7 @@ export class VentasService {
   ): Promise<void> {
     const { item } = linea;
 
-    await tx.saleItem.create({
+    const saleItem = await tx.saleItem.create({
       data: {
         inquilinoId,
         ventaId,
@@ -981,17 +1056,31 @@ export class VentasService {
         AfectacionImpuesto: linea.afectacionImpuesto,
         cantidad: linea.cantidad,
         precioUnitario: linea.precioUnitario,
-        // Valor unitario = precio sin el IGV. Solo se resta el impuesto cuando
-        // venía incluido en el precio; si no, el precio ya ES el valor.
-        valorUnitario: linea.impuestoIncluido
-          ? linea.precioUnitario.sub(linea.montoImpuesto.div(linea.cantidad))
-          : linea.precioUnitario,
+        // Valor unitario neto (sin IGV y con el descuento ya aplicado).
+        valorUnitario: linea.valorUnitario,
         montoBruto: linea.montoBruto,
+        discountAmount: linea.descuentoMonto,
         montoImpuesto: linea.montoImpuesto,
         montoOtrosTributos: linea.montoOtrosTributos,
         total: linea.total,
       },
+      select: { id: true },
     });
+
+    // Detalle del descuento por promoción (trazabilidad y reportes).
+    if (linea.descuentoPromocion && linea.descuentoMonto.gt(0)) {
+      await tx.saleItemDiscount.create({
+        data: {
+          inquilinoId,
+          itemVentaId: saleItem.id,
+          promocionId: linea.descuentoPromocion.promocionId,
+          codigo: linea.descuentoPromocion.codigo,
+          descripcion: linea.descuentoPromocion.descripcion,
+          rate: linea.descuentoPromocion.rate,
+          monto: linea.descuentoMonto,
+        },
+      });
+    }
 
     if (!linea.isStockTracked) return;
 

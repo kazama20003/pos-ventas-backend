@@ -373,6 +373,7 @@ model Company {
   certificadosSunat SunatCertificate[]
   cuentasProveedor  PaymentProviderAccount[]
   ventas            Sale[]
+  promociones       Promotion[]
 
   @@unique([inquilinoId, ruc])
   @@unique([inquilinoId, id])
@@ -1344,30 +1345,108 @@ model SaleItem {
 }
 
 model SaleDiscount {
-  id             String   @id @default(uuid()) @db.Uuid
-  inquilinoId    String   @db.Uuid
-  ventaId        String   @db.Uuid
+  id             String     @id @default(uuid()) @db.Uuid
+  inquilinoId    String     @db.Uuid
+  ventaId        String     @db.Uuid
+  promocionId    String?    @db.Uuid
   codigo         String?
   descripcion    String
-  rate           Decimal? @db.Decimal(9, 6)
-  monto          Decimal  @db.Decimal(18, 2)
-  authorizedById String?  @db.Uuid
-  sale           Sale     @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  rate           Decimal?   @db.Decimal(9, 6)
+  monto          Decimal    @db.Decimal(18, 2)
+  authorizedById String?    @db.Uuid
+  sale           Sale       @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  promotion      Promotion? @relation(fields: [inquilinoId, promocionId], references: [inquilinoId, id], onDelete: Restrict)
 
   @@index([inquilinoId, ventaId])
+  @@index([inquilinoId, promocionId])
 }
 
 model SaleItemDiscount {
-  id          String   @id @default(uuid()) @db.Uuid
-  inquilinoId String   @db.Uuid
-  itemVentaId String   @db.Uuid
+  id          String     @id @default(uuid()) @db.Uuid
+  inquilinoId String     @db.Uuid
+  itemVentaId String     @db.Uuid
+  promocionId String?    @db.Uuid
   codigo      String?
   descripcion String
-  rate        Decimal? @db.Decimal(9, 6)
-  monto       Decimal  @db.Decimal(18, 2)
-  saleItem    SaleItem @relation(fields: [itemVentaId], references: [id], onDelete: Restrict)
+  rate        Decimal?   @db.Decimal(9, 6)
+  monto       Decimal    @db.Decimal(18, 2)
+  saleItem    SaleItem   @relation(fields: [itemVentaId], references: [id], onDelete: Restrict)
+  promotion   Promotion? @relation(fields: [inquilinoId, promocionId], references: [inquilinoId, id], onDelete: Restrict)
 
   @@index([inquilinoId, itemVentaId])
+  @@index([inquilinoId, promocionId])
+}
+
+/// Beneficio que otorga una promoción.
+enum TipoBeneficioPromocion {
+  PORCENTAJE // % de descuento sobre el precio
+  MONTO_FIJO // descuento de monto fijo por unidad
+  PRECIO_FIJO // precio de oferta por unidad
+  LLEVA_N_PAGA_M // por cada N unidades se pagan M (2x1, 3x2…)
+}
+
+/// A qué alcanza una promoción. Fase 1 usa PRODUCTO; el resto queda listo.
+enum AlcancePromocion {
+  PRODUCTO
+  CATEGORIA
+  MARCA
+  VENTA
+}
+
+enum EstadoPromocion {
+  PROGRAMADA
+  ACTIVA
+  PAUSADA
+  EXPIRADA
+}
+
+/// Campaña de oferta con vigencia. El beneficio se aplica a las líneas de venta
+/// cuyo producto cae en algún `PromotionScope`. La caja solo la confirma; el
+/// backend revalida vigencia y condiciones al cobrar (autoridad en servidor).
+model Promotion {
+  id               String                 @id @default(uuid()) @db.Uuid
+  inquilinoId      String                 @db.Uuid
+  empresaId        String                 @db.Uuid
+  codigo           String
+  nombre           String
+  descripcion      String?
+  tipoBeneficio    TipoBeneficioPromocion
+  valor            Decimal?               @db.Decimal(18, 6)
+  compraCantidad   Int? // N en "lleva N paga M"
+  pagaCantidad     Int? // M en "lleva N paga M"
+  iniciaEn         DateTime
+  terminaEn        DateTime?
+  estado           EstadoPromocion        @default(PROGRAMADA)
+  prioridad        Int                    @default(0)
+  acumulable       Boolean                @default(false)
+  cantidadMinima   Decimal?               @db.Decimal(18, 6)
+  montoMinimoVenta Decimal?               @db.Decimal(18, 2)
+  usoMaximo        Int?
+  usoActual        Int                    @default(0)
+  creadoEn         DateTime               @default(now())
+  actualizadoEn    DateTime               @updatedAt
+  company          Company                @relation(fields: [inquilinoId, empresaId], references: [inquilinoId, id], onDelete: Restrict)
+  scopes           PromotionScope[]
+  descuentosVenta  SaleDiscount[]
+  descuentosLinea  SaleItemDiscount[]
+
+  @@unique([inquilinoId, empresaId, codigo])
+  @@unique([inquilinoId, id])
+  @@index([inquilinoId, empresaId, estado, iniciaEn, terminaEn])
+}
+
+/// Objetivo de una promoción: un producto, categoría o marca concretos, o toda
+/// la venta (referenciaId nulo).
+model PromotionScope {
+  id           String           @id @default(uuid()) @db.Uuid
+  inquilinoId  String           @db.Uuid
+  promocionId  String           @db.Uuid
+  alcance      AlcancePromocion
+  referenciaId String?          @db.Uuid
+  promotion    Promotion        @relation(fields: [promocionId], references: [id], onDelete: Cascade)
+
+  @@index([inquilinoId, promocionId])
+  @@index([inquilinoId, alcance, referenciaId])
 }
 
 model SaleTax {

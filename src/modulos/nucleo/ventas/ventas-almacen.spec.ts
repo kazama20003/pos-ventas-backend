@@ -13,7 +13,13 @@ const INQ = 'inq-1';
 
 function crearServicio(): VentasService {
   // Los helpers bajo prueba solo tocan `tx`; las dependencias no se usan.
-  return new VentasService({} as never, {} as never, {} as never);
+  return new VentasService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
 }
 
 function invocar<T>(nombre: string, ...args: unknown[]): Promise<T> {

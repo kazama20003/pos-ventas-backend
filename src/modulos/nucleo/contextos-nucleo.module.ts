@@ -11,6 +11,7 @@ import { IntegrationsModule } from './integraciones/integraciones.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { InventoryModule } from './inventario/inventario.module';
 import { PaymentsModule } from './pagos/pagos.module';
+import { PromotionsModule } from './promociones/promociones.module';
 import { PurchasesModule } from './compras/compras.module';
 import { ReportsModule } from './reportes/reportes.module';
 import { BranchesModule } from './sucursales/sucursales.module';
@@ -30,6 +31,7 @@ import { UsersModule } from './usuarios/usuarios.module';
     CatalogModule,
     InventoryModule,
     SalesModule,
+    PromotionsModule,
     CashRegisterModule,
     PaymentsModule,
     FiscalModule,
