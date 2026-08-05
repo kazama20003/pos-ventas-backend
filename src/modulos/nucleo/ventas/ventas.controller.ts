@@ -9,6 +9,7 @@ import {
 import { RequierePermiso } from '../identidad/decoradores';
 import { CrearVentaDto } from './dto/crear-venta.dto';
 import { CrearDevolucionDto } from './dto/crear-devolucion.dto';
+import { ListarVentasDto } from './dto/listar-ventas.dto';
 import { SincronizarVentasDto } from './dto/sincronizar-ventas.dto';
 import { VentasService } from './ventas.service';
 
@@ -20,6 +21,12 @@ export class VentasController {
   @Get('contexto')
   contexto(@Query('sucursalId', ParseUUIDPipe) sucursalId: string) {
     return this.ventas.contextoPos(sucursalId);
+  }
+
+  @RequierePermiso('ventas.crear')
+  @Get()
+  listar(@Query() dto: ListarVentasDto) {
+    return this.ventas.listarVentas(dto);
   }
 
   @RequierePermiso('ventas.crear')

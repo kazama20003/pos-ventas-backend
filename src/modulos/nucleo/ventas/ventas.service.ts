@@ -13,6 +13,7 @@ import {
   MetodoPagoDto,
 } from './dto/crear-venta.dto';
 import { CrearDevolucionDto } from './dto/crear-devolucion.dto';
+import { ListarVentasDto } from './dto/listar-ventas.dto';
 import { SincronizarVentasDto } from './dto/sincronizar-ventas.dto';
 
 type TxPrisma = Prisma.TransactionClient;
@@ -87,6 +88,123 @@ export class VentasService {
         moneda: suc.company?.moneda ?? 'PEN',
         series,
         tienePrecios: listaDefault != null,
+      };
+    });
+  }
+
+  /**
+   * Historial de ventas de una sucursal, paginado y con quién la registró.
+   * Filtros: estado, cajero, cliente, rango de fechas y búsqueda por número o
+   * razón social. Ordena de la más reciente a la más antigua.
+   */
+  async listarVentas(dto: ListarVentasDto) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    await this.autorizacion.exigirEnSucursal('ventas.crear', dto.sucursalId);
+
+    const page = dto.page ?? 1;
+    const pageSize = Math.min(dto.pageSize ?? 20, 100);
+
+    // `hasta` es inclusivo del día indicado: se compara contra el inicio del
+    // día siguiente para no perder ventas de la última jornada.
+    let hastaExclusivo: Date | undefined;
+    if (dto.hasta) {
+      hastaExclusivo = new Date(dto.hasta);
+      hastaExclusivo.setDate(hastaExclusivo.getDate() + 1);
+    }
+
+    const where: Prisma.SaleWhereInput = {
+      inquilinoId,
+      sucursalId: dto.sucursalId,
+      ...(dto.estado ? { estado: dto.estado } : {}),
+      ...(dto.cajeroId ? { cashierMembershipId: dto.cajeroId } : {}),
+      ...(dto.clienteId ? { clienteId: dto.clienteId } : {}),
+      ...(dto.desde || hastaExclusivo
+        ? {
+            creadoEn: {
+              ...(dto.desde ? { gte: new Date(dto.desde) } : {}),
+              ...(hastaExclusivo ? { lt: hastaExclusivo } : {}),
+            },
+          }
+        : {}),
+      ...(dto.q
+        ? {
+            OR: [
+              { number: { contains: dto.q, mode: 'insensitive' } },
+              {
+                customer: {
+                  razonSocial: { contains: dto.q, mode: 'insensitive' },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const total = await tx.sale.count({ where });
+      const filas = await tx.sale.findMany({
+        where,
+        orderBy: { creadoEn: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          number: true,
+          estado: true,
+          moneda: true,
+          total: true,
+          totalPagado: true,
+          creadoEn: true,
+          completadoEn: true,
+          customer: {
+            select: {
+              razonSocial: true,
+              documentType: true,
+              documentNumber: true,
+            },
+          },
+          cashierMembership: {
+            select: {
+              id: true,
+              userIdentity: { select: { nombreVisible: true, email: true } },
+            },
+          },
+          _count: { select: { articulos: true } },
+        },
+      });
+
+      const items = filas.map((v) => ({
+        id: v.id,
+        number: v.number,
+        estado: v.estado,
+        moneda: v.moneda,
+        total: v.total.toFixed(2),
+        totalPagado: v.totalPagado.toFixed(2),
+        creadoEn: v.creadoEn,
+        completadoEn: v.completadoEn,
+        items: v._count.articulos,
+        cliente: v.customer
+          ? {
+              razonSocial: v.customer.razonSocial,
+              documentType: v.customer.documentType,
+              documentNumber: v.customer.documentNumber,
+            }
+          : null,
+        cajero: {
+          membresiaId: v.cashierMembership.id,
+          nombre:
+            v.cashierMembership.userIdentity?.nombreVisible ??
+            v.cashierMembership.userIdentity?.email ??
+            'Desconocido',
+        },
+      }));
+
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
       };
     });
   }
