@@ -127,6 +127,8 @@ export class CajaService {
           estado: true,
           abiertoEn: true,
           cerradoEn: true,
+          abiertoPorId: true,
+          cerradoPorId: true,
           openingAmount: true,
           expectedAmount: true,
           declaredAmount: true,
@@ -136,12 +138,31 @@ export class CajaService {
         orderBy: { abiertoEn: 'desc' },
         take,
       });
+
+      // Nombres de quién abrió/cerró (abiertoPorId/cerradoPorId → UserIdentity).
+      const idsUsuarios = [
+        ...new Set(
+          sesiones
+            .flatMap((s) => [s.abiertoPorId, s.cerradoPorId])
+            .filter((id): id is string => !!id),
+        ),
+      ];
+      const usuarios = idsUsuarios.length
+        ? await tx.userIdentity.findMany({
+            where: { inquilinoId, id: { in: idsUsuarios } },
+            select: { id: true, nombreVisible: true },
+          })
+        : [];
+      const nombre = new Map(usuarios.map((u) => [u.id, u.nombreVisible]));
+
       return sesiones.map((s) => ({
         id: s.id,
         cajaId: s.cajaId,
         estado: s.estado,
         abiertoEn: s.abiertoEn,
         cerradoEn: s.cerradoEn,
+        abiertoPor: nombre.get(s.abiertoPorId) ?? null,
+        cerradoPor: s.cerradoPorId ? (nombre.get(s.cerradoPorId) ?? null) : null,
         caja: s.cashRegister,
         montoApertura: s.openingAmount.toFixed(2),
         efectivoEsperado: s.expectedAmount?.toFixed(2) ?? null,
