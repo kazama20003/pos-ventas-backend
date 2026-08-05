@@ -452,8 +452,10 @@ model CashRegister {
   almacen       Warehouse?     @relation(fields: [inquilinoId, almacenId], references: [inquilinoId, id], onDelete: Restrict)
   terminales    Terminal[]
   sessions      CashSession[]
+  operadores    CajaOperador[]
 
   @@unique([inquilinoId, sucursalId, codigo])
+  @@unique([inquilinoId, id])
   @@index([inquilinoId, sucursalId, estado])
 }
 
@@ -494,11 +496,28 @@ model UserIdentity {
   actualizadoEn   DateTime       @updatedAt
   tenant          Tenant         @relation(fields: [inquilinoId], references: [id], onDelete: Restrict)
   memberships     Membership[]
+  cajasOperadas   CajaOperador[]
 
   @@unique([inquilinoId, sujetoExterno])
   @@unique([inquilinoId, email])
   @@unique([inquilinoId, id])
   @@index([inquilinoId, estado])
+}
+
+/// Qué cajas puede abrir/operar cada usuario. Si un usuario no tiene ninguna
+/// asignada, no puede abrir caja (salvo administradores con sucursales.gestionar).
+model CajaOperador {
+  id                 String       @id @default(uuid()) @db.Uuid
+  inquilinoId        String       @db.Uuid
+  identidadUsuarioId String       @db.Uuid
+  cajaId             String       @db.Uuid
+  creadoEn           DateTime     @default(now())
+  usuario            UserIdentity @relation(fields: [inquilinoId, identidadUsuarioId], references: [inquilinoId, id], onDelete: Cascade)
+  caja               CashRegister @relation(fields: [inquilinoId, cajaId], references: [inquilinoId, id], onDelete: Cascade)
+
+  @@unique([inquilinoId, identidadUsuarioId, cajaId])
+  @@index([inquilinoId, cajaId])
+  @@index([inquilinoId, identidadUsuarioId])
 }
 
 model Membership {

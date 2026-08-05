@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { RequierePermiso } from '../identidad/decoradores';
@@ -60,5 +61,30 @@ export class CajaController {
   @RequierePermiso('caja.cerrar')
   cerrar(@Body() dto: CerrarCajaDto) {
     return this.caja.cerrar(dto);
+  }
+
+  // Cajas que el usuario actual puede abrir (selector de apertura).
+  @Get('mis-cajas')
+  @RequierePermiso('caja.abrir')
+  misCajas(@Query('sucursalId', ParseUUIDPipe) sucursalId: string) {
+    return this.caja.misCajas(sucursalId);
+  }
+
+  // Gestión de operadores por el administrador (asignación en el usuario).
+  @Get('operadores/:identidadUsuarioId')
+  @RequierePermiso('sucursales.gestionar')
+  operadorCajas(
+    @Param('identidadUsuarioId', ParseUUIDPipe) identidadUsuarioId: string,
+  ) {
+    return this.caja.operadorCajas(identidadUsuarioId);
+  }
+
+  @Put('operadores/:identidadUsuarioId')
+  @RequierePermiso('sucursales.gestionar')
+  asignarCajas(
+    @Param('identidadUsuarioId', ParseUUIDPipe) identidadUsuarioId: string,
+    @Body('cajaIds') cajaIds: string[],
+  ) {
+    return this.caja.asignarCajas(identidadUsuarioId, cajaIds ?? []);
   }
 }

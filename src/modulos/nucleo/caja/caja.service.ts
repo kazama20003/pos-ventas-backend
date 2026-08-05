@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -47,6 +48,24 @@ export class CajaService {
         select: { id: true },
       });
       if (!caja) throw new NotFoundException('Caja no encontrada o inactiva');
+
+      // Control de operador: el cajero solo abre las cajas que tiene asignadas.
+      // Excepción: un administrador (sucursales.gestionar) abre cualquiera.
+      const esAdmin = await this.autorizacion.permitidoEnSucursal(
+        'sucursales.gestionar',
+        dto.sucursalId,
+      );
+      if (!esAdmin) {
+        const asignado = await tx.cajaOperador.findFirst({
+          where: { inquilinoId, identidadUsuarioId, cajaId: dto.cajaId },
+          select: { id: true },
+        });
+        if (!asignado) {
+          throw new ForbiddenException(
+            'No tienes esta caja asignada. Pide a un administrador que te la asigne.',
+          );
+        }
+      }
 
       // Guarda explícita: una caja no puede tener dos sesiones abiertas a la vez.
       // (El schema no tiene un unique parcial; no basta con atrapar P2002.)
@@ -362,6 +381,81 @@ export class CajaService {
         motivo: m.motivo,
         occurredAt: m.occurredAt,
       }));
+    });
+  }
+
+  /**
+   * Cajas que el usuario ACTUAL puede abrir en una sucursal: las asignadas, o
+   * todas las activas si es administrador (sucursales.gestionar). Alimenta el
+   * selector de apertura de caja.
+   */
+  async misCajas(sucursalId: string) {
+    const { inquilinoId, identidadUsuarioId } =
+      this.contexto.obtenerObligatorio();
+    await this.autorizacion.exigirEnSucursal('caja.abrir', sucursalId);
+    const esAdmin = await this.autorizacion.permitidoEnSucursal(
+      'sucursales.gestionar',
+      sucursalId,
+    );
+    return this.prisma.ejecutarEnTenant(inquilinoId, (tx) =>
+      tx.cashRegister.findMany({
+        where: {
+          inquilinoId,
+          sucursalId,
+          estado: 'ACTIVO',
+          ...(esAdmin
+            ? {}
+            : { operadores: { some: { inquilinoId, identidadUsuarioId } } }),
+        },
+        orderBy: { codigo: 'asc' },
+        select: { id: true, codigo: true, nombre: true },
+      }),
+    );
+  }
+
+  /** Cajas asignadas a un usuario (para que el admin las gestione). */
+  async operadorCajas(identidadUsuarioId: string) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const filas = await tx.cajaOperador.findMany({
+        where: { inquilinoId, identidadUsuarioId },
+        select: { cajaId: true },
+      });
+      return filas.map((f) => f.cajaId);
+    });
+  }
+
+  /** Reemplaza el conjunto de cajas asignadas a un usuario (admin). */
+  async asignarCajas(identidadUsuarioId: string, cajaIds: string[]) {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    const ids = [...new Set(cajaIds)];
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const usuario = await tx.userIdentity.findFirst({
+        where: { id: identidadUsuarioId, inquilinoId },
+        select: { id: true },
+      });
+      if (!usuario) throw new NotFoundException('Usuario no encontrado');
+      if (ids.length) {
+        const validas = await tx.cashRegister.count({
+          where: { inquilinoId, id: { in: ids } },
+        });
+        if (validas !== ids.length) {
+          throw new ConflictException('Alguna caja no existe en el negocio');
+        }
+      }
+      await tx.cajaOperador.deleteMany({
+        where: { inquilinoId, identidadUsuarioId },
+      });
+      if (ids.length) {
+        await tx.cajaOperador.createMany({
+          data: ids.map((cajaId) => ({
+            inquilinoId,
+            identidadUsuarioId,
+            cajaId,
+          })),
+        });
+      }
+      return { identidadUsuarioId, cajas: ids };
     });
   }
 
