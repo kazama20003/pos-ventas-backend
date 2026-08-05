@@ -836,16 +836,21 @@ export class InventarioService {
           estado: 'EN_PROGRESO',
           contadoPorId: membresiaId ?? null,
           iniciadoEn: new Date(),
-          articulos: {
-            create: saldos.map((s) => ({
-              inquilinoId,
-              varianteId: s.varianteId,
-              cantidadEsperada: new Prisma.Decimal(s.enStock),
-            })),
-          },
         },
         select: { id: true },
       });
+      // createMany (input unchecked) acepta los escalares directamente; el
+      // create anidado no expone inquilinoId por compartirlo count y variant.
+      if (saldos.length) {
+        await tx.inventoryCountItem.createMany({
+          data: saldos.map((s) => ({
+            inquilinoId,
+            countId: conteo.id,
+            varianteId: s.varianteId,
+            cantidadEsperada: new Prisma.Decimal(s.enStock),
+          })),
+        });
+      }
       return this.obtenerConteoTx(tx, inquilinoId, conteo.id);
     });
   }
