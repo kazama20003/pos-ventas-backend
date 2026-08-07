@@ -122,14 +122,40 @@ export class PromocionesService {
           _count: { select: { scopes: true } },
         },
       });
+      const ahora = new Date();
       return {
-        items,
+        items: items.map((p) => ({
+          ...p,
+          estadoEfectivo: this.estadoEfectivo(
+            p.estado,
+            p.iniciaEn,
+            p.terminaEn,
+            ahora,
+          ),
+        })),
         total,
         page,
         pageSize,
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
       };
     });
+  }
+
+  /**
+   * Estado derivado por fechas (cosmético): la vigencia real se valida en
+   * `cargarVigentes`. No modifica el `estado` guardado. Una pausa manual
+   * (PAUSADA) prevalece; en el resto se deriva PROGRAMADA/ACTIVA/EXPIRADA.
+   */
+  private estadoEfectivo(
+    estado: string,
+    iniciaEn: Date,
+    terminaEn: Date | null,
+    ahora: Date,
+  ): string {
+    if (estado === 'PAUSADA') return 'PAUSADA';
+    if (terminaEn && terminaEn.getTime() <= ahora.getTime()) return 'EXPIRADA';
+    if (iniciaEn.getTime() > ahora.getTime()) return 'PROGRAMADA';
+    return 'ACTIVA';
   }
 
   obtenerPromocion(id: string) {

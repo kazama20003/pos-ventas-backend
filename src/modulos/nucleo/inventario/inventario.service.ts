@@ -272,9 +272,14 @@ export class InventarioService {
         almacenId: dto.almacenId,
         varianteId: dto.varianteId,
         movementType: esEntrada ? 'AJUSTE_ENTRADA' : 'AJUSTE_SALIDA',
-        cantidad,
+        // Convención del kardex: las salidas se registran con signo negativo
+        // (igual que VENTA). El stock real vive en StockBalance; esto es
+        // coherencia de auditoría.
+        cantidad: esEntrada ? cantidad : cantidad.negated(),
         costoUnitario,
-        totalCost: cantidad.mul(costoUnitario),
+        totalCost: esEntrada
+          ? cantidad.mul(costoUnitario)
+          : cantidad.mul(costoUnitario).negated(),
         referenciaType: 'AJUSTE_MANUAL',
         referenciaId: dto.varianteId,
         idempotencyKey,
@@ -1236,9 +1241,10 @@ export class InventarioService {
             almacenId: dto.almacenOrigenId,
             varianteId,
             movementType: 'TRANSFERENCIA_SALIDA',
-            cantidad,
+            // Salida → signo negativo en el kardex (ver crearAsientoAjuste).
+            cantidad: cantidad.negated(),
             costoUnitario: costo,
-            totalCost: cantidad.mul(costo),
+            totalCost: cantidad.mul(costo).negated(),
             referenciaType: 'TRANSFERENCIA',
             referenciaId: transfer.id,
             correlationId: transfer.id,
