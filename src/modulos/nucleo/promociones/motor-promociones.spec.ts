@@ -19,6 +19,8 @@ function promo(over: Partial<PromocionAplicable>): PromocionAplicable {
     compraCantidad: null,
     pagaCantidad: null,
     cantidadMinima: null,
+    montoMinimoVenta: null,
+    acumulable: false,
     prioridad: 0,
     productoIds: new Set(['prod-1']),
     alcanzaVenta: false,
@@ -156,5 +158,43 @@ describe('MotorPromociones · mejorDescuento', () => {
   it('devuelve null si ninguna aplica', () => {
     const promos = [promo({ cantidadMinima: D(99) })];
     expect(motor.mejorDescuento(promos, linea())).toBeNull();
+  });
+});
+
+describe('MotorPromociones · descuentosDeLinea', () => {
+  const TOTAL = D(1000);
+
+  it('acumula las acumulables + la mejor no acumulable', () => {
+    const promos = [
+      promo({ id: 'a', acumulable: true, tipoBeneficio: 'PORCENTAJE', valor: D(10) }),
+      promo({ id: 'b', acumulable: true, tipoBeneficio: 'MONTO_FIJO', valor: D(1) }),
+      promo({ id: 'c', acumulable: false, tipoBeneficio: 'PORCENTAJE', valor: D(5) }),
+      promo({ id: 'd', acumulable: false, tipoBeneficio: 'PORCENTAJE', valor: D(15) }),
+    ];
+    // línea 2 x 10 = 20 → a=2, b=2, mejor no-acum d=3 ⇒ 7.
+    const r = motor.descuentosDeLinea(promos, linea(), TOTAL);
+    expect(r.total.toFixed(2)).toBe('7.00');
+    expect(r.detalles.map((x) => x.promocionId).sort()).toEqual(['a', 'b', 'd']);
+  });
+
+  it('respeta el monto mínimo de venta', () => {
+    const promos = [
+      promo({ tipoBeneficio: 'PORCENTAJE', valor: D(10), montoMinimoVenta: D(500) }),
+    ];
+    expect(
+      motor.descuentosDeLinea(promos, linea(), D(100)).total.toFixed(2),
+    ).toBe('0.00');
+    expect(
+      motor.descuentosDeLinea(promos, linea(), D(600)).total.toFixed(2),
+    ).toBe('2.00');
+  });
+
+  it('el total acumulado nunca supera la base', () => {
+    const promos = [
+      promo({ id: 'a', acumulable: true, tipoBeneficio: 'MONTO_FIJO', valor: D(8) }),
+      promo({ id: 'b', acumulable: true, tipoBeneficio: 'MONTO_FIJO', valor: D(8) }),
+    ];
+    const r = motor.descuentosDeLinea(promos, linea(), TOTAL);
+    expect(r.total.toFixed(2)).toBe('20.00');
   });
 });

@@ -265,41 +265,55 @@ export class PromocionesService {
       );
       const promos = await this.cargarVigentes(tx, inquilinoId, suc.empresaId);
 
-      const lineas = dto.items
+      // Contextos + base bruta total (para el gate de monto mínimo de venta).
+      const contextos = dto.items
         .map((it) => {
           const v = variantes.get(it.varianteId);
           if (!v) return null;
           const cantidad = new Prisma.Decimal(it.cantidad);
-          const contexto: LineaPromo = {
-            productoId: v.productoId,
-            cantidad,
-            precioUnitario: v.precio,
-            montoBruto: v.precio.mul(cantidad),
-          };
-          const d = this.motor.mejorDescuento(promos, contexto);
           return {
             varianteId: it.varianteId,
-            descuento: d
-              ? {
-                  promocionId: d.promocionId,
-                  codigo: d.codigo,
-                  descripcion: d.descripcion,
-                  monto: d.monto.toFixed(2),
-                }
-              : null,
+            ctx: {
+              productoId: v.productoId,
+              cantidad,
+              precioUnitario: v.precio,
+              montoBruto: v.precio.mul(cantidad),
+            } as LineaPromo,
           };
         })
         .filter((x): x is NonNullable<typeof x> => x !== null);
+      const totalVenta = contextos.reduce(
+        (acc, c) => acc.add(c.ctx.montoBruto),
+        new Prisma.Decimal(0),
+      );
+
+      const idsUsadas = new Set<string>();
+      const lineas = contextos.map((c) => {
+        const r = this.motor.descuentosDeLinea(promos, c.ctx, totalVenta);
+        r.detalles.forEach((d) => idsUsadas.add(d.promocionId));
+        const primera = r.detalles[0];
+        return {
+          varianteId: c.varianteId,
+          descuento:
+            r.total.gt(0) && primera
+              ? {
+                  promocionId: primera.promocionId,
+                  codigo: primera.codigo,
+                  descripcion:
+                    r.detalles.length > 1
+                      ? `${r.detalles.length} promociones`
+                      : primera.descripcion,
+                  monto: r.total.toFixed(2),
+                }
+              : null,
+        };
+      })
 
       const totalDescuento = lineas.reduce(
         (acc, l) => acc.add(l.descuento ? new Prisma.Decimal(l.descuento.monto) : 0),
         new Prisma.Decimal(0),
       );
-      const promocionIds = [
-        ...new Set(
-          lineas.map((l) => l.descuento?.promocionId).filter(Boolean),
-        ),
-      ];
+      const promocionIds = [...idsUsadas];
       return {
         lineas,
         totalDescuento: totalDescuento.toFixed(2),
@@ -347,6 +361,8 @@ export class PromocionesService {
         compraCantidad: true,
         pagaCantidad: true,
         cantidadMinima: true,
+        montoMinimoVenta: true,
+        acumulable: true,
         prioridad: true,
         usoMaximo: true,
         usoActual: true,
@@ -370,6 +386,8 @@ export class PromocionesService {
           compraCantidad: p.compraCantidad,
           pagaCantidad: p.pagaCantidad,
           cantidadMinima: p.cantidadMinima,
+          montoMinimoVenta: p.montoMinimoVenta,
+          acumulable: p.acumulable,
           prioridad: p.prioridad,
           productoIds,
           alcanzaVenta: p.scopes.some((s) => s.alcance === 'VENTA'),

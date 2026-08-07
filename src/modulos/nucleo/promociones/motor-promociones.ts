@@ -15,6 +15,10 @@ export interface PromocionAplicable {
   compraCantidad: number | null;
   pagaCantidad: number | null;
   cantidadMinima: Prisma.Decimal | null;
+  /** Monto mínimo de la venta para que la promo aplique (null = sin mínimo). */
+  montoMinimoVenta: Prisma.Decimal | null;
+  /** Si es acumulable con otras; si no, compite por ser la mejor única. */
+  acumulable: boolean;
   prioridad: number;
   /** Productos alcanzados (productoId). Vacío = alcance de toda la venta. */
   productoIds: Set<string>;
@@ -137,5 +141,45 @@ export class MotorPromociones {
       }
     }
     return mejor;
+  }
+
+  /**
+   * Descuentos aplicables a una línea, respetando el monto mínimo de venta y la
+   * acumulación: suma todas las promos acumulables más la mejor no acumulable.
+   * El total nunca supera la base bruta de la línea.
+   * @param totalVenta base bruta total de la venta (para el gate de mínimo).
+   */
+  descuentosDeLinea(
+    promos: PromocionAplicable[],
+    linea: LineaPromo,
+    totalVenta: Prisma.Decimal,
+  ): { total: Prisma.Decimal; detalles: DescuentoLinea[] } {
+    const elegibles = promos.filter(
+      (p) => !p.montoMinimoVenta || totalVenta.gte(p.montoMinimoVenta),
+    );
+    const detalles: DescuentoLinea[] = [];
+    let mejorNoAcum: { promo: PromocionAplicable; d: DescuentoLinea } | null =
+      null;
+
+    for (const promo of elegibles) {
+      const d = this.descuentoDeLinea(promo, linea);
+      if (!d) continue;
+      if (promo.acumulable) {
+        detalles.push(d);
+      } else if (
+        !mejorNoAcum ||
+        d.monto.gt(mejorNoAcum.d.monto) ||
+        (d.monto.eq(mejorNoAcum.d.monto) &&
+          promo.prioridad > mejorNoAcum.promo.prioridad)
+      ) {
+        mejorNoAcum = { promo, d };
+      }
+    }
+    if (mejorNoAcum) detalles.push(mejorNoAcum.d);
+
+    let total = detalles.reduce((acc, d) => acc.add(d.monto), CERO);
+    // El total de descuentos no puede superar la base de la línea.
+    if (total.gt(linea.montoBruto)) total = linea.montoBruto;
+    return { total: total.toDP(2), detalles };
   }
 }

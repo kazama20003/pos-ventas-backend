@@ -44,15 +44,16 @@ interface LineaCalculada {
   montoOtrosTributos: Prisma.Decimal;
   /** El impuesto principal ya está contenido en precioUnitario (IGV incluido). */
   impuestoIncluido: boolean;
-  /** Descuento de promoción aplicado a la línea (sobre la base bruta). */
+  /** Descuento total de promociones en la línea (sobre la base bruta). */
   descuentoMonto: Prisma.Decimal;
-  /** Promoción que originó el descuento (trazabilidad); null si no hubo. */
-  descuentoPromocion: {
+  /** Detalle de cada promoción aplicada (trazabilidad + uso). */
+  descuentos: {
     promocionId: string;
     codigo: string;
     descripcion: string;
     rate: Prisma.Decimal | null;
-  } | null;
+    monto: Prisma.Decimal;
+  }[];
   /** Valor unitario neto (sin IGV y ya con el descuento aplicado). */
   valorUnitario: Prisma.Decimal;
   total: Prisma.Decimal;
@@ -331,9 +332,7 @@ export class VentasService {
       // Contabiliza el uso de cada promoción aplicada (una vez por venta).
       const promosUsadas = [
         ...new Set(
-          lineas
-            .map((l) => l.descuentoPromocion?.promocionId)
-            .filter((id): id is string => !!id),
+          lineas.flatMap((l) => l.descuentos.map((d) => d.promocionId)),
         ),
       ];
       if (promosUsadas.length) {
@@ -707,6 +706,25 @@ export class VentasService {
         });
       }
 
+      // Al devolver la venta por completo se libera el uso de sus promociones
+      // (usoActual), para que no consuma cupo de una venta que ya no existe.
+      if (todo) {
+        const promos = await tx.saleItemDiscount.findMany({
+          where: { inquilinoId, saleItem: { ventaId: dto.ventaId } },
+          select: { promocionId: true },
+          distinct: ['promocionId'],
+        });
+        const ids = promos
+          .map((p) => p.promocionId)
+          .filter((id): id is string => !!id);
+        if (ids.length) {
+          await tx.promotion.updateMany({
+            where: { inquilinoId, id: { in: ids }, usoActual: { gt: 0 } },
+            data: { usoActual: { decrement: 1 } },
+          });
+        }
+      }
+
       return { ...refund, total: total.toFixed(2), idempotente: false };
     });
   }
@@ -912,25 +930,16 @@ export class VentasService {
       dto.promocionIds ?? [],
     );
 
-    // Secuencial: comparten una sola conexión pg dentro de la transacción;
-    // en paralelo dispararía el DeprecationWarning de pg.
-    const lineas: LineaCalculada[] = [];
+    // Primera pasada: precio vigente por línea y base bruta total de la venta
+    // (necesaria para el gate de monto mínimo de las promociones).
+    const precioIdx = new Map<number, Prisma.Decimal>();
+    let totalVentaBruto = new Prisma.Decimal(0);
     for (const [indice, item] of dto.items.entries()) {
       const variante = porId.get(item.varianteId);
       if (!variante) {
         throw new NotFoundException(
           `Variante no encontrada o inactiva: ${item.varianteId}`,
         );
-      }
-      // Solo las variantes con stock necesitan almacén; resolver línea o default.
-      let almacenId = '';
-      if (variante.isStockTracked) {
-        almacenId = item.almacenId ?? almacenDefault ?? '';
-        if (!almacenId) {
-          throw new ConflictException(
-            `Falta almacén para ${variante.sku}: la sucursal no tiene almacén predeterminado`,
-          );
-        }
       }
       const cantidad = new Prisma.Decimal(item.cantidad);
       const precio = await tx.priceListItem.findFirst({
@@ -964,20 +973,44 @@ export class VentasService {
           `No existe un precio vigente para ${variante.sku}`,
         );
       }
-      const precioUnitario = precio.monto;
+      precioIdx.set(indice, precio.monto);
+      totalVentaBruto = totalVentaBruto.add(cantidad.mul(precio.monto));
+    }
+
+    // Secuencial: comparten una sola conexión pg dentro de la transacción;
+    // en paralelo dispararía el DeprecationWarning de pg.
+    const lineas: LineaCalculada[] = [];
+    for (const [indice, item] of dto.items.entries()) {
+      const variante = porId.get(item.varianteId)!;
+      // Solo las variantes con stock necesitan almacén; resolver línea o default.
+      let almacenId = '';
+      if (variante.isStockTracked) {
+        almacenId = item.almacenId ?? almacenDefault ?? '';
+        if (!almacenId) {
+          throw new ConflictException(
+            `Falta almacén para ${variante.sku}: la sucursal no tiene almacén predeterminado`,
+          );
+        }
+      }
+      const cantidad = new Prisma.Decimal(item.cantidad);
+      const precioUnitario = precioIdx.get(indice)!;
       const montoBruto = cantidad.mul(precioUnitario);
 
-      // Descuento de promoción sobre la base bruta (antes del IGV). El mejor
-      // beneficio aplicable a esta línea; null si ninguna promo la alcanza.
-      const descuento = promos.length
-        ? this.motor.mejorDescuento(promos, {
-            productoId: variante.productoId,
-            cantidad,
-            precioUnitario,
-            montoBruto,
-          })
-        : null;
-      const descuentoMonto = descuento?.monto ?? new Prisma.Decimal(0);
+      // Descuentos de promoción sobre la base bruta (antes del IGV): acumula
+      // las acumulables + la mejor no acumulable, respetando el monto mínimo.
+      const promo = promos.length
+        ? this.motor.descuentosDeLinea(
+            promos,
+            {
+              productoId: variante.productoId,
+              cantidad,
+              precioUnitario,
+              montoBruto,
+            },
+            totalVentaBruto,
+          )
+        : { total: new Prisma.Decimal(0), detalles: [] };
+      const descuentoMonto = promo.total;
       const baseNeta = montoBruto.sub(descuentoMonto);
 
       const tributos = variante.taxes.map((t) => t.tax);
@@ -1025,14 +1058,13 @@ export class VentasService {
         montoOtrosTributos,
         impuestoIncluido: incluido,
         descuentoMonto,
-        descuentoPromocion: descuento
-          ? {
-              promocionId: descuento.promocionId,
-              codigo: descuento.codigo,
-              descripcion: descuento.descripcion,
-              rate: descuento.rate,
-            }
-          : null,
+        descuentos: promo.detalles.map((d) => ({
+          promocionId: d.promocionId,
+          codigo: d.codigo,
+          descripcion: d.descripcion,
+          rate: d.rate,
+          monto: d.monto,
+        })),
         valorUnitario,
         total,
       });
@@ -1114,17 +1146,18 @@ export class VentasService {
       select: { id: true },
     });
 
-    // Detalle del descuento por promoción (trazabilidad y reportes).
-    if (linea.descuentoPromocion && linea.descuentoMonto.gt(0)) {
+    // Detalle de cada descuento por promoción (trazabilidad y reportes).
+    for (const d of linea.descuentos) {
+      if (d.monto.lte(0)) continue;
       await tx.saleItemDiscount.create({
         data: {
           inquilinoId,
           itemVentaId: saleItem.id,
-          promocionId: linea.descuentoPromocion.promocionId,
-          codigo: linea.descuentoPromocion.codigo,
-          descripcion: linea.descuentoPromocion.descripcion,
-          rate: linea.descuentoPromocion.rate,
-          monto: linea.descuentoMonto,
+          promocionId: d.promocionId,
+          codigo: d.codigo,
+          descripcion: d.descripcion,
+          rate: d.rate,
+          monto: d.monto,
         },
       });
     }
