@@ -1183,12 +1183,11 @@ export class VentasService {
     inquilinoId: string,
     dto: CrearVentaDto,
   ) {
-    const requiereCaja = (dto.pagos ?? []).some(
-      (pago) => pago.method === MetodoPagoDto.EFECTIVO,
-    );
-    if (requiereCaja && !dto.sesionCajaId) {
+    // Regla: TODA venta se registra dentro de un turno de caja abierto de la
+    // sucursal (trazabilidad de efectivo y arqueo, aunque el pago sea tarjeta).
+    if (!dto.sesionCajaId) {
       throw new ConflictException(
-        'Una venta en efectivo requiere una sesión de caja',
+        'Debes abrir una caja antes de registrar una venta.',
       );
     }
     // Secuencial: comparten una sola conexión pg dentro de la transacción.
@@ -1211,20 +1210,23 @@ export class VentasService {
           select: { id: true },
         })
       : true;
-    const sesion = dto.sesionCajaId
-      ? await tx.cashSession.findFirst({
-          where: {
-            id: dto.sesionCajaId,
-            inquilinoId,
-            sucursalId: dto.sucursalId,
-            estado: 'ABIERTA',
-          },
-          select: { id: true },
-        })
-      : true;
-    if (!empresa || !sucursal || !cliente || !sesion) {
+    const sesion = await tx.cashSession.findFirst({
+      where: {
+        id: dto.sesionCajaId,
+        inquilinoId,
+        sucursalId: dto.sucursalId,
+        estado: 'ABIERTA',
+      },
+      select: { id: true },
+    });
+    if (!sesion) {
+      throw new ConflictException(
+        'La caja no está abierta o no pertenece a esta sucursal. Abre una caja para vender.',
+      );
+    }
+    if (!empresa || !sucursal || !cliente) {
       throw new NotFoundException(
-        'Empresa, sucursal, cliente o sesión de caja no válida para la venta',
+        'Empresa, sucursal o cliente no válidos para la venta',
       );
     }
   }
