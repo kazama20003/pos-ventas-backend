@@ -49,23 +49,14 @@ export class CajaService {
       });
       if (!caja) throw new NotFoundException('Caja no encontrada o inactiva');
 
-      // Control de operador: el cajero solo abre las cajas que tiene asignadas.
-      // Excepción: un administrador (sucursales.gestionar) abre cualquiera.
-      const esAdmin = await this.autorizacion.permitidoEnSucursal(
-        'sucursales.gestionar',
+      // El cajero solo opera las cajas que tiene asignadas (admin: cualquiera).
+      await this.exigirOperador(
+        tx,
+        inquilinoId,
+        identidadUsuarioId,
         dto.sucursalId,
+        dto.cajaId,
       );
-      if (!esAdmin) {
-        const asignado = await tx.cajaOperador.findFirst({
-          where: { inquilinoId, identidadUsuarioId, cajaId: dto.cajaId },
-          select: { id: true },
-        });
-        if (!asignado) {
-          throw new ForbiddenException(
-            'No tienes esta caja asignada. Pide a un administrador que te la asigne.',
-          );
-        }
-      }
 
       // Guarda explícita: una caja no puede tener dos sesiones abiertas a la vez.
       // (El schema no tiene un unique parcial; no basta con atrapar P2002.)
@@ -229,8 +220,10 @@ export class CajaService {
     const { inquilinoId, identidadUsuarioId } =
       this.contexto.obtenerObligatorio();
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
-      const filas = await tx.$queryRaw<{ estado: string }[]>`
-        SELECT "estado" FROM "CashSession"
+      const filas = await tx.$queryRaw<
+        { estado: string; sucursalId: string; cajaId: string }[]
+      >`
+        SELECT "estado", "sucursalId", "cajaId" FROM "CashSession"
         WHERE "id" = ${dto.sesionCajaId}::uuid AND "inquilinoId" = ${inquilinoId}::uuid
         FOR UPDATE`;
       if (filas.length === 0) {
@@ -241,6 +234,14 @@ export class CajaService {
           `La sesión no está abierta (estado ${filas[0].estado})`,
         );
       }
+      // Solo un operador de esa caja (o admin) puede cerrarla.
+      await this.exigirOperador(
+        tx,
+        inquilinoId,
+        identidadUsuarioId,
+        filas[0].sucursalId,
+        filas[0].cajaId,
+      );
 
       const esperado = await this.calcularEsperado(
         tx,
@@ -310,9 +311,9 @@ export class CajaService {
       // cerrando, este movimiento espera y luego ve CONCILIADA (rechazado); sin
       // el lock, el efectivo entraría fuera del arqueo ya conciliado.
       const filas = await tx.$queryRaw<
-        { estado: string; sucursalId: string }[]
+        { estado: string; sucursalId: string; cajaId: string }[]
       >`
-        SELECT "estado", "sucursalId" FROM "CashSession"
+        SELECT "estado", "sucursalId", "cajaId" FROM "CashSession"
         WHERE "id" = ${dto.sesionCajaId}::uuid AND "inquilinoId" = ${inquilinoId}::uuid
         FOR UPDATE`;
       if (filas.length === 0) {
@@ -324,8 +325,14 @@ export class CajaService {
           `La sesión no está abierta (estado ${sesion.estado})`,
         );
       }
-      // Alcance por sucursal: mover efectivo requiere poder abrir caja allí.
-      await this.autorizacion.exigirEnSucursal('caja.abrir', sesion.sucursalId);
+      // Solo un operador de esa caja (o admin) mueve su efectivo.
+      await this.exigirOperador(
+        tx,
+        inquilinoId,
+        identidadUsuarioId,
+        sesion.sucursalId,
+        sesion.cajaId,
+      );
 
       await tx.cashMovement.create({
         data: {
@@ -457,6 +464,33 @@ export class CajaService {
       }
       return { identidadUsuarioId, cajas: ids };
     });
+  }
+
+  /**
+   * Exige que el usuario pueda operar la caja: o es administrador
+   * (sucursales.gestionar) o tiene la caja asignada (CajaOperador).
+   */
+  private async exigirOperador(
+    tx: Prisma.TransactionClient,
+    inquilinoId: string,
+    identidadUsuarioId: string,
+    sucursalId: string,
+    cajaId: string,
+  ): Promise<void> {
+    const esAdmin = await this.autorizacion.permitidoEnSucursal(
+      'sucursales.gestionar',
+      sucursalId,
+    );
+    if (esAdmin) return;
+    const asignado = await tx.cajaOperador.findFirst({
+      where: { inquilinoId, identidadUsuarioId, cajaId },
+      select: { id: true },
+    });
+    if (!asignado) {
+      throw new ForbiddenException(
+        'No tienes esta caja asignada. Pide a un administrador que te la asigne.',
+      );
+    }
   }
 
   private async calcularEsperado(

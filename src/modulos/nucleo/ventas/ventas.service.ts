@@ -487,6 +487,19 @@ export class VentasService {
   async devolver(dto: CrearDevolucionDto) {
     const { inquilinoId, identidadUsuarioId } =
       this.contexto.obtenerObligatorio();
+    // Alcance por sucursal (igual que crear): se resuelve la sucursal de la
+    // venta antes de la transacción para no anidar transacciones.
+    const cab = await this.prisma.ejecutarEnTenant(inquilinoId, (tx) =>
+      tx.sale.findFirst({
+        where: { id: dto.ventaId, inquilinoId },
+        select: { sucursalId: true },
+      }),
+    );
+    if (!cab) throw new NotFoundException('Venta no encontrada');
+    await this.autorizacion.exigirEnSucursal(
+      'ventas.devolver',
+      cab.sucursalId,
+    );
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       const existente = await tx.saleRefund.findFirst({
         where: { inquilinoId, idempotencyKey: dto.idempotencyKey },
@@ -657,6 +670,40 @@ export class VentasService {
             referenciaId: refund.id,
             actorId: identidadUsuarioId,
           },
+        });
+      }
+
+      // Estado de la venta según lo devuelto acumulado (vigente): totalmente
+      // devuelta → DEVUELTA; algo devuelto → DEVUELTA_PARCIALMENTE.
+      const itemsVenta = await tx.saleItem.findMany({
+        where: { inquilinoId, ventaId: dto.ventaId },
+        select: { id: true, cantidad: true },
+      });
+      const devPorItem = await tx.saleRefundItem.groupBy({
+        by: ['itemVentaId'],
+        where: {
+          inquilinoId,
+          ventaId: dto.ventaId,
+          saleRefund: { estado: { notIn: ['RECHAZADA', 'CANCELADA'] } },
+        },
+        _sum: { cantidad: true },
+      });
+      const devMap = new Map(
+        devPorItem.map((g) => [
+          g.itemVentaId,
+          g._sum.cantidad ?? new Prisma.Decimal(0),
+        ]),
+      );
+      const todo = itemsVenta.every((si) =>
+        (devMap.get(si.id) ?? new Prisma.Decimal(0)).gte(si.cantidad),
+      );
+      const algo = itemsVenta.some((si) =>
+        (devMap.get(si.id) ?? new Prisma.Decimal(0)).gt(0),
+      );
+      if (algo) {
+        await tx.sale.update({
+          where: { id: venta.id },
+          data: { estado: todo ? 'DEVUELTA' : 'DEVUELTA_PARCIALMENTE' },
         });
       }
 

@@ -326,7 +326,6 @@ export class InventarioService {
     const { inquilinoId } = this.contexto.obtenerObligatorio();
     const page = Math.max(filtros.page ?? 1, 1);
     const pageSize = Math.min(Math.max(filtros.pageSize ?? 50, 1), 200);
-    const CAP = 5000;
     const q = filtros.q?.trim();
 
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
@@ -372,7 +371,8 @@ export class InventarioService {
             },
           },
         },
-        take: CAP,
+        // Sin tope: los totales/valorizado deben cubrir todo el filtro; los
+        // filtros (sucursal, almacén, con stock, búsqueda) acotan el conjunto.
       });
 
       const mapeadas = filas.map((f) => {
@@ -467,7 +467,7 @@ export class InventarioService {
         page,
         pageSize,
         totalPages: Math.max(Math.ceil(total / pageSize), 1),
-        truncado: total >= CAP,
+        truncado: false,
         totales: {
           unidades: unidades.toString(),
           valor: valorTotal.toString(),
@@ -1304,6 +1304,20 @@ export class InventarioService {
         include: { articulos: true },
       });
       if (!transfer) throw new NotFoundException('Transferencia no encontrada');
+
+      // Idempotencia: un reintento con la misma clave no re-aplica el stock.
+      const yaRecibida = await tx.inventoryLedgerEntry.findFirst({
+        where: {
+          inquilinoId,
+          movementType: 'TRANSFERENCIA_ENTRADA',
+          idempotencyKey: { startsWith: `transf-entrada:${dto.idempotencyKey}:` },
+        },
+        select: { id: true },
+      });
+      if (yaRecibida) {
+        return this.obtenerTransferenciaTx(tx, inquilinoId, transfer.id);
+      }
+
       if (
         transfer.estado !== 'EN_TRANSITO' &&
         transfer.estado !== 'RECIBIDA_PARCIALMENTE'
