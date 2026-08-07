@@ -153,17 +153,26 @@ export class PromocionesService {
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       const promo = await tx.promotion.findFirst({
         where: { id, inquilinoId },
-        select: { id: true, empresaId: true, tipoBeneficio: true },
+        select: {
+          id: true,
+          empresaId: true,
+          tipoBeneficio: true,
+          valor: true,
+          compraCantidad: true,
+          pagaCantidad: true,
+        },
       });
       if (!promo) throw new NotFoundException('Promoción no encontrada');
       if (dto.productoIds) {
         await this.exigirProductosDeEmpresa(tx, inquilinoId, dto.productoIds);
       }
+      // Merge con los valores actuales: un PATCH parcial (solo nombre, etc.)
+      // no debe fallar por revalidar el beneficio con campos undefined.
       this.validarBeneficio({
         tipoBeneficio: dto.tipoBeneficio ?? (promo.tipoBeneficio as never),
-        valor: dto.valor,
-        compraCantidad: dto.compraCantidad,
-        pagaCantidad: dto.pagaCantidad,
+        valor: dto.valor ?? (promo.valor != null ? Number(promo.valor) : undefined),
+        compraCantidad: dto.compraCantidad ?? promo.compraCantidad ?? undefined,
+        pagaCantidad: dto.pagaCantidad ?? promo.pagaCantidad ?? undefined,
       });
 
       return tx.promotion.update({

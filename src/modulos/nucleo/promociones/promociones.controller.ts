@@ -11,8 +11,8 @@ import {
 import { RequierePermiso } from '../identidad/decoradores';
 import {
   ActualizarPromocionDto,
+  CambiarEstadoPromocionDto,
   CrearPromocionDto,
-  EstadoPromocionDto,
   ListarPromocionesDto,
   PromocionesAplicablesDto,
 } from './dto/promociones.dto';
@@ -60,8 +60,8 @@ export class PromocionesController {
   @Patch(':id/estado')
   cambiarEstado(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('estado') estado: EstadoPromocionDto,
+    @Body() dto: CambiarEstadoPromocionDto,
   ) {
-    return this.promociones.cambiarEstadoPromocion(id, estado);
+    return this.promociones.cambiarEstadoPromocion(id, dto.estado);
   }
 }

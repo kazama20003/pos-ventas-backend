@@ -44,6 +44,7 @@ describe('ConstructorComprobante — ICBPER', () => {
       cantidad: D(1),
       precioUnitario: D('11.80'),
       valorUnitario: D('10.00'),
+      discountAmount: D('0.00'),
       montoImpuesto: D('1.80'),
       montoOtrosTributos: D('0.00'),
       total: D('11.80'),
@@ -60,6 +61,7 @@ describe('ConstructorComprobante — ICBPER', () => {
       cantidad: D(2),
       precioUnitario: D('0.00'),
       valorUnitario: D('0.00'),
+      discountAmount: D('0.00'),
       montoImpuesto: D('0.00'),
       montoOtrosTributos: D('1.00'), // 0.50 × 2
       total: D('1.00'),
@@ -90,6 +92,7 @@ describe('ConstructorComprobante — ICBPER', () => {
       cantidad: D(1),
       precioUnitario: D('118.00'),
       valorUnitario: D('100.00'),
+      discountAmount: D('0.00'),
       montoImpuesto: D('18.00'),
       montoOtrosTributos: D('0.00'),
       total: D('118.00'),

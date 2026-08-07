@@ -173,6 +173,11 @@ export enum EstadoPromocionDto {
   EXPIRADA = 'EXPIRADA',
 }
 
+export class CambiarEstadoPromocionDto {
+  @IsEnum(EstadoPromocionDto)
+  estado!: EstadoPromocionDto;
+}
+
 export class ListarPromocionesDto {
   @IsUUID()
   empresaId!: string;

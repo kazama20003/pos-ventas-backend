@@ -27,6 +27,8 @@ export interface LineaVenta {
   cantidad: Prisma.Decimal;
   precioUnitario: Prisma.Decimal;
   valorUnitario: Prisma.Decimal;
+  /** Descuento aplicado a la línea (promoción), sobre la base sin ICBPER. */
+  discountAmount: Prisma.Decimal;
   montoImpuesto: Prisma.Decimal;
   /** Tributos de monto fijo de la línea (ICBPER). Ya incluido en `total`. */
   montoOtrosTributos: Prisma.Decimal;
@@ -125,12 +127,19 @@ export class ConstructorComprobante {
     let freeTotal = CERO;
     let totalImpuesto = CERO;
     let otrosTributos = CERO;
+    let totalDescuento = CERO;
     let total = CERO;
 
     const items = entrada.lineas.map((linea): ItemConstruido => {
       const mapa = AFECTACION_SUNAT[linea.afectacion];
       const baseImponible = linea.valorUnitario.mul(linea.cantidad).toDP(2);
       const esGratuito = linea.afectacion === 'GRATUITO';
+      // Precio unitario coherente con el valor ya descontado: precio con IGV
+      // por unidad = valor neto + IGV/unidad. Así precioUnitario × cantidad
+      // reconcilia con el importe de la línea (sin ICBPER) y SUNAT lo valida.
+      const precioUnitario = linea.cantidad.gt(0)
+        ? linea.valorUnitario.add(linea.montoImpuesto.div(linea.cantidad))
+        : linea.valorUnitario;
 
       if (esGratuito) freeTotal = freeTotal.add(baseImponible);
       else if (linea.afectacion === 'GRAVADO')
@@ -141,6 +150,7 @@ export class ConstructorComprobante {
 
       totalImpuesto = totalImpuesto.add(linea.montoImpuesto);
       otrosTributos = otrosTributos.add(linea.montoOtrosTributos);
+      totalDescuento = totalDescuento.add(linea.discountAmount);
       // `linea.total` ya incluye el ICBPER: no re-sumar otrosTributos aquí.
       if (!esGratuito) total = total.add(linea.total);
 
@@ -160,8 +170,8 @@ export class ConstructorComprobante {
           linea.afectacion === 'GRAVADO' ? new Prisma.Decimal(TASA_IGV) : CERO,
         cantidad: linea.cantidad,
         valorUnitario: linea.valorUnitario,
-        precioUnitario: linea.precioUnitario,
-        discountAmount: CERO,
+        precioUnitario,
+        discountAmount: linea.discountAmount,
         taxableBase: baseImponible,
         montoImpuesto: linea.montoImpuesto,
         montoOtrosTributos: linea.montoOtrosTributos,
@@ -176,7 +186,7 @@ export class ConstructorComprobante {
       exemptTotal,
       unaffectedTotal,
       freeTotal,
-      totalDescuento: CERO,
+      totalDescuento,
       totalImpuesto,
       otrosTributos,
       total,
