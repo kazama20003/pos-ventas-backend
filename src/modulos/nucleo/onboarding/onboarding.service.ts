@@ -12,7 +12,10 @@ import {
 } from '../identidad/autenticacion.service';
 import { CATALOGO_PERMISOS } from '../identidad/catalogo-permisos';
 import { VerificadorGoogle } from '../identidad/verificador-google';
-import { RegistrarEmpresaDto } from './dto/registrar.dto';
+import {
+  ConfiguracionInicialDto,
+  RegistrarEmpresaDto,
+} from './dto/registrar.dto';
 
 @Injectable()
 export class OnboardingService {
@@ -57,14 +60,47 @@ export class OnboardingService {
           select: { id: true },
         });
 
-        await tx.company.create({
+        const empresa = await tx.company.create({
           data: {
             inquilinoId: tenant.id,
             organizacionId: organizacion.id,
             razonSocial: dto.empresaRazonSocial,
             ruc: dto.empresaRuc,
           },
+          select: { id: true },
         });
+
+        if (dto.configuracionInicial === ConfiguracionInicialDto.RAPIDA) {
+          const sucursal = await tx.branch.create({
+            data: {
+              inquilinoId: tenant.id,
+              empresaId: empresa.id,
+              codigo: 'PRINCIPAL',
+              nombre: dto.sucursalNombre ?? 'Sucursal principal',
+              address: dto.sucursalDireccion ?? null,
+            },
+            select: { id: true },
+          });
+          const almacen = await tx.warehouse.create({
+            data: {
+              inquilinoId: tenant.id,
+              sucursalId: sucursal.id,
+              codigo: 'PRINCIPAL',
+              nombre: dto.almacenNombre ?? 'Almacén principal',
+              tipo: 'PRINCIPAL',
+              esPredeterminado: true,
+            },
+          });
+          await tx.cashRegister.create({
+            data: {
+              inquilinoId: tenant.id,
+              sucursalId: sucursal.id,
+              almacenId: almacen.id,
+              codigo: 'PRINCIPAL',
+              nombre: dto.cajaNombre ?? 'Caja principal',
+            },
+          });
+        }
 
         await tx.outboxEvent.create({
           data: {

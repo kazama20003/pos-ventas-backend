@@ -7,7 +7,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { RequierePermiso } from '../../nucleo/identidad/decoradores';
+import { RequierePermiso } from '../identidad/decoradores';
 import { CrearNotificacionDto } from './dto/notificaciones.dto';
 import { NotificacionesService } from './notificaciones.service';
 

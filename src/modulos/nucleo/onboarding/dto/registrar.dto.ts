@@ -1,4 +1,5 @@
 import {
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -7,6 +8,11 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+
+export enum ConfiguracionInicialDto {
+  RAPIDA = 'RAPIDA',
+  MANUAL = 'MANUAL',
+}
 
 export class RegistrarEmpresaDto {
   /** Google ID token of the person registering (becomes owner/admin). */
@@ -51,4 +57,35 @@ export class RegistrarEmpresaDto {
   @IsString()
   @MaxLength(160)
   adminNombre?: string;
+
+  /** La configuración rápida crea sucursal, almacén y caja iniciales. */
+  @IsOptional()
+  @IsEnum(ConfiguracionInicialDto)
+  configuracionInicial?: ConfiguracionInicialDto;
+
+  /** Nombre de la primera sucursal creada durante la configuración rápida. */
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(160)
+  sucursalNombre?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(250)
+  sucursalDireccion?: string;
+
+  /** Nombre del almacén principal creado durante la configuración rápida. */
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(160)
+  almacenNombre?: string;
+
+  /** Nombre de la caja inicial creada durante la configuración rápida. */
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(160)
+  cajaNombre?: string;
 }

@@ -10,6 +10,7 @@ import { IdentityModule } from './identidad/identidad.module';
 import { IntegrationsModule } from './integraciones/integraciones.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { InventoryModule } from './inventario/inventario.module';
+import { NotificationsModule } from './notificaciones/notificaciones.module';
 import { PaymentsModule } from './pagos/pagos.module';
 import { PromotionsModule } from './promociones/promociones.module';
 import { PurchasesModule } from './compras/compras.module';
@@ -30,6 +31,7 @@ import { UsersModule } from './usuarios/usuarios.module';
     BranchesModule,
     CatalogModule,
     InventoryModule,
+    NotificationsModule,
     SalesModule,
     PromotionsModule,
     CashRegisterModule,

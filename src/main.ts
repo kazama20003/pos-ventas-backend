@@ -11,7 +11,10 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.use(helmet());
   app.enableCors({
-    origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(','),
+    origin:
+      config.corsOrigin === '*'
+        ? true
+        : config.corsOrigin.split(',').map((origin) => origin.trim()),
     credentials: true,
   });
   app.useGlobalPipes(

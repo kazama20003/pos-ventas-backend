@@ -38,7 +38,14 @@ export class AppConfigService {
     this.jwtSecret = this.requireSecret('JWT_SECRET', 32);
     this.jwtExpiresIn = (process.env.JWT_EXPIRES_IN ?? '15m') as DuracionJwt;
     this.googleClientId = this.required('GOOGLE_CLIENT_ID');
-    this.corsOrigin = process.env.CORS_ORIGIN ?? '*';
+    const corsOrigin = process.env.CORS_ORIGIN?.trim();
+    if (
+      this.environment === 'production' &&
+      (!corsOrigin || corsOrigin === '*')
+    ) {
+      throw new Error('CORS_ORIGIN must list explicit origins in production');
+    }
+    this.corsOrigin = corsOrigin ?? '*';
     this.logLevel = process.env.LOG_LEVEL ?? 'log';
     this.databasePoolMax = Number(process.env.DATABASE_POOL_MAX ?? 10);
     this.resendApiKey = process.env.RESEND_API_KEY ?? null;

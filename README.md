@@ -14,6 +14,12 @@ pnpm test
 pnpm test:e2e
 ```
 
+## Carga
+
+La prueba de carga para una instancia de 8 GB está en
+[`docs/prueba-carga-8gb.md`](docs/prueba-carga-8gb.md). Ejecuta `pnpm load:8gb`
+desde una máquina distinta al servidor medido.
+
 Prisma commands:
 
 ```bash
@@ -38,6 +44,8 @@ Project-owned paths use Spanish. Technical identifiers, including Nest module/se
 ## Transaction And Event Rules
 
 Use a transaction only inside one database and one aggregate workflow. A core change that must notify management writes its `OutboxEvent` in same core transaction. Outbox worker publishes event with idempotency key; management consumes it idempotently in its own transaction. Never coordinate both clients with distributed transactions or cross-database foreign keys.
+
+`tenant.created` events are relayed by `RelayTenantOutbox` into the management inbox. The HTTP runtime URLs must use the RLS-constrained `pos_app` and `pos_management_app` roles. Set `CORE_OUTBOX_DATABASE_URL` to the separate, Core-only worker role that can claim `OutboxEvent` rows across tenants; see `docs/database-roles.md`.
 
 Production migrations must add PostgreSQL RLS policies, financial and quantity `CHECK` constraints, effective-date exclusion constraints, and immutability rules for posted ledger and fiscal records. Prisma models provide tenant-aware keys and relations; application services must still set tenant context and update ledger projections atomically.
 

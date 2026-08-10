@@ -18,7 +18,13 @@ export class TenantAdministrationService {
     evento: ConsumirTenantCreadoDto,
     inquilinoAutenticadoId: string,
   ) {
-    this.validarEvento(evento, inquilinoAutenticadoId);
+    this.validarEventoAutenticado(evento, inquilinoAutenticadoId);
+    return this.procesarTenantCreado(evento);
+  }
+
+  /** Consume a trusted event claimed from the Core outbox worker. */
+  async procesarTenantCreado(evento: ConsumirTenantCreadoDto) {
+    this.validarEvento(evento);
 
     // Confirma bajo RLS que el tenant fuente existe antes de proyectarlo.
     await this.operaciones.ejecutarEnTenant(evento.inquilinoId, (tx) =>
@@ -110,19 +116,25 @@ export class TenantAdministrationService {
     }
   }
 
-  private validarEvento(
+  private validarEventoAutenticado(
     evento: ConsumirTenantCreadoDto,
     inquilinoAutenticadoId: string,
   ): void {
+    this.validarEvento(evento);
+    if (evento.inquilinoId !== inquilinoAutenticadoId) {
+      throw new BadRequestException(
+        'El evento no corresponde al tenant autenticado',
+      );
+    }
+  }
+
+  private validarEvento(evento: ConsumirTenantCreadoDto): void {
     if (evento.eventType !== EVENTO_TENANT_CREADO) {
       throw new BadRequestException('Tipo de evento no soportado');
     }
-    if (
-      evento.inquilinoId !== evento.carga.tenantId ||
-      evento.inquilinoId !== inquilinoAutenticadoId
-    ) {
+    if (evento.inquilinoId !== evento.carga.tenantId) {
       throw new BadRequestException(
-        'El evento no corresponde al tenant autenticado',
+        'El evento no corresponde al tenant indicado',
       );
     }
   }

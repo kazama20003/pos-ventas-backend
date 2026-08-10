@@ -4,8 +4,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Storage } from '@google-cloud/storage';
 import { CorePrismaService } from '../../../compartido/base-datos/prisma-operaciones.service';
 import { ContextoSolicitudService } from '../../../compartido/contexto/contexto-solicitud.service';
 import { ConfirmarSubidaDto, PresignSubidaDto } from './dto/archivos.dto';
@@ -16,25 +15,20 @@ const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const PRESIGN_TTL = 300;
 
 type ConfigAlmacen = {
-  endpoint?: string;
-  region: string;
+  projectId?: string;
   bucket: string;
-  accessKeyId: string;
-  secretAccessKey: string;
   publicUrl: string;
-  forcePathStyle: boolean;
 };
 
 /**
- * Subida de archivos a un object storage S3-compatible (AWS S3, Cloudflare R2,
- * MinIO). No crea nada en la nube: solo firma URLs y registra el FileObject.
- * Se configura por variables de entorno; si faltan, los endpoints responden
- * 503 con un mensaje claro (el resto del backend arranca igual).
+ * Subida de archivos a Google Cloud Storage. Usa Application Default Credentials:
+ * la cuenta de servicio de Cloud Run en producción y GOOGLE_APPLICATION_CREDENTIALS
+ * para desarrollo local. Solo firma URLs y registra el FileObject.
  */
 @Injectable()
 export class ArchivosService {
   private readonly logger = new Logger(ArchivosService.name);
-  private cliente: S3Client | null = null;
+  private cliente: Storage | null = null;
   private config: ConfigAlmacen | null = null;
 
   constructor(
@@ -44,51 +38,27 @@ export class ArchivosService {
 
   private cargarConfig(): ConfigAlmacen {
     if (this.config) return this.config;
-    const {
-      ALMACEN_S3_REGION,
-      ALMACEN_S3_BUCKET,
-      ALMACEN_S3_ACCESS_KEY,
-      ALMACEN_S3_SECRET_KEY,
-      ALMACEN_S3_PUBLIC_URL,
-      ALMACEN_S3_ENDPOINT,
-      ALMACEN_S3_FORCE_PATH_STYLE,
-    } = process.env;
+    const { GOOGLE_CLOUD_PROJECT, ALMACEN_GCS_BUCKET, ALMACEN_GCS_PUBLIC_URL } =
+      process.env;
 
-    if (
-      !ALMACEN_S3_BUCKET ||
-      !ALMACEN_S3_ACCESS_KEY ||
-      !ALMACEN_S3_SECRET_KEY ||
-      !ALMACEN_S3_PUBLIC_URL
-    ) {
+    if (!ALMACEN_GCS_BUCKET || !ALMACEN_GCS_PUBLIC_URL) {
       throw new ServiceUnavailableException(
-        'El almacenamiento de archivos no está configurado (falta ALMACEN_S3_*)',
+        'El almacenamiento de archivos no está configurado (falta ALMACEN_GCS_*)',
       );
     }
 
     this.config = {
-      endpoint: ALMACEN_S3_ENDPOINT || undefined,
-      region: ALMACEN_S3_REGION || 'auto',
-      bucket: ALMACEN_S3_BUCKET,
-      accessKeyId: ALMACEN_S3_ACCESS_KEY,
-      secretAccessKey: ALMACEN_S3_SECRET_KEY,
-      publicUrl: ALMACEN_S3_PUBLIC_URL.replace(/\/+$/, ''),
-      forcePathStyle: ALMACEN_S3_FORCE_PATH_STYLE === 'true',
+      projectId: GOOGLE_CLOUD_PROJECT || undefined,
+      bucket: ALMACEN_GCS_BUCKET,
+      publicUrl: ALMACEN_GCS_PUBLIC_URL.replace(/\/+$/, ''),
     };
     return this.config;
   }
 
-  private obtenerCliente(): { cliente: S3Client; config: ConfigAlmacen } {
+  private obtenerCliente(): { cliente: Storage; config: ConfigAlmacen } {
     const config = this.cargarConfig();
     if (!this.cliente) {
-      this.cliente = new S3Client({
-        region: config.region,
-        endpoint: config.endpoint,
-        forcePathStyle: config.forcePathStyle,
-        credentials: {
-          accessKeyId: config.accessKeyId,
-          secretAccessKey: config.secretAccessKey,
-        },
-      });
+      this.cliente = new Storage({ projectId: config.projectId });
     }
     return { cliente: this.cliente, config };
   }
@@ -119,14 +89,15 @@ export class ArchivosService {
       dto.fileName,
     )}`;
 
-    const comando = new PutObjectCommand({
-      Bucket: config.bucket,
-      Key: storageKey,
-      ContentType: dto.contentType,
-    });
-    const uploadUrl = await getSignedUrl(cliente, comando, {
-      expiresIn: PRESIGN_TTL,
-    });
+    const [uploadUrl] = await cliente
+      .bucket(config.bucket)
+      .file(storageKey)
+      .getSignedUrl({
+        action: 'write',
+        contentType: dto.contentType,
+        expires: Date.now() + PRESIGN_TTL * 1000,
+        version: 'v4',
+      });
 
     return {
       storageKey,
