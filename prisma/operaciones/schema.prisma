@@ -2342,3 +2342,18 @@ model Notification {
   @@index([inquilinoId, recipientId, estado, creadoEn])
   @@index([inquilinoId, estado, programadoEn])
 }
+
+/// Estado del onboarding guiado por inquilino. Se crea al registrar la empresa
+/// para que la guía de "primera venta" aparezca desde el inicio; guarda si el
+/// usuario la descartó y cuándo la completó. El progreso por paso se deriva de
+/// datos reales (productos, caja, ventas) en el servicio, no se persiste aquí.
+model OnboardingState {
+  id            String    @id @default(uuid()) @db.Uuid
+  inquilinoId   String    @unique @db.Uuid
+  descartado    Boolean   @default(false)
+  completadoEn  DateTime?
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+
+  @@index([inquilinoId])
+}

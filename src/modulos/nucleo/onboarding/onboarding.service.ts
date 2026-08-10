@@ -17,6 +17,26 @@ import {
   RegistrarEmpresaDto,
 } from './dto/registrar.dto';
 
+export type PasoOnboarding =
+  | 'producto'
+  | 'stock'
+  | 'caja'
+  | 'venta'
+  | 'completado';
+
+export interface EstadoOnboarding {
+  descartado: boolean;
+  completadoEn: Date | null;
+  pasoActual: PasoOnboarding;
+  pasos: {
+    productoCreado: boolean;
+    necesitaStock: boolean;
+    stockListo: boolean;
+    cajaAbierta: boolean;
+    primeraVenta: boolean;
+  };
+}
+
 @Injectable()
 export class OnboardingService {
   constructor(
@@ -101,6 +121,10 @@ export class OnboardingService {
             },
           });
         }
+
+        // Estado del onboarding guiado: se crea desde el registro para que la
+        // guía de primera venta aparezca en el dashboard desde el inicio.
+        await tx.onboardingState.create({ data: { inquilinoId: tenant.id } });
 
         await tx.outboxEvent.create({
           data: {
@@ -197,6 +221,87 @@ export class OnboardingService {
       admin: { id: resultado.adminId, email: resultado.email },
       tokens,
     };
+  }
+
+  /**
+   * Estado del onboarding guiado. Deriva el "paso actual" (un solo foco a la
+   * vez, sin listas) de datos reales del tenant: crear producto/servicio → dar
+   * stock (solo si vende productos físicos) → abrir caja → primera venta. El
+   * flag de descartado y la fecha de completado se persisten en OnboardingState.
+   */
+  async estado(inquilinoId: string): Promise<EstadoOnboarding> {
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      // Tenants creados antes de esta función no tienen fila: se crea perezosa.
+      let estado = await tx.onboardingState.findUnique({
+        where: { inquilinoId },
+      });
+      estado ??= await tx.onboardingState.create({ data: { inquilinoId } });
+
+      const [
+        productosActivos,
+        productosFisicos,
+        conStock,
+        cajasAbiertas,
+        ventas,
+      ] = await Promise.all([
+        tx.product.count({ where: { inquilinoId, estado: 'ACTIVO' } }),
+        tx.product.count({
+          where: { inquilinoId, estado: 'ACTIVO', kind: { not: 'SERVICIO' } },
+        }),
+        tx.stockBalance.count({ where: { inquilinoId, enStock: { gt: 0 } } }),
+        tx.cashSession.count({ where: { inquilinoId, estado: 'ABIERTA' } }),
+        tx.sale.count({ where: { inquilinoId } }),
+      ]);
+
+      const productoCreado = productosActivos > 0;
+      const necesitaStock = productosFisicos > 0;
+      const stockListo = conStock > 0;
+      const cajaAbierta = cajasAbiertas > 0;
+      const primeraVenta = ventas > 0;
+
+      const pasoActual: PasoOnboarding = !productoCreado
+        ? 'producto'
+        : necesitaStock && !stockListo
+          ? 'stock'
+          : !cajaAbierta
+            ? 'caja'
+            : !primeraVenta
+              ? 'venta'
+              : 'completado';
+
+      // Sella la fecha de completado la primera vez que hay una venta.
+      if (primeraVenta && !estado.completadoEn) {
+        estado = await tx.onboardingState.update({
+          where: { inquilinoId },
+          data: { completadoEn: new Date() },
+        });
+      }
+
+      return {
+        descartado: estado.descartado,
+        completadoEn: estado.completadoEn,
+        pasoActual,
+        pasos: {
+          productoCreado,
+          necesitaStock,
+          stockListo,
+          cajaAbierta,
+          primeraVenta,
+        },
+      };
+    });
+  }
+
+  /** Marca la guía como descartada (el usuario la cierra). Idempotente. */
+  async descartar(inquilinoId: string): Promise<EstadoOnboarding> {
+    await this.prisma.ejecutarEnTenant(inquilinoId, (tx) =>
+      tx.onboardingState.upsert({
+        where: { inquilinoId },
+        create: { inquilinoId, descartado: true },
+        update: { descartado: true },
+      }),
+    );
+    return this.estado(inquilinoId);
   }
 
   /**
