@@ -627,6 +627,82 @@ export class InventarioService {
     });
   }
 
+  /**
+   * Lotes próximos a vencer o ya vencidos (control de caducidad para farmacia/
+   * clínica/alimentos). Devuelve los InventoryLot con saldo positivo cuyo
+   * `venceEn` cae dentro de `dias` (default 30), ordenados por el más próximo,
+   * marcando cuáles ya están vencidos.
+   */
+  async vencimientos(filtros: { dias?: number; almacenId?: string }) {
+    const dias = filtros.dias && filtros.dias > 0 ? filtros.dias : 30;
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const limite = new Date();
+      limite.setDate(limite.getDate() + dias);
+      const filas = await tx.inventoryLot.findMany({
+        where: {
+          inquilinoId,
+          cantidad: { gt: 0 },
+          venceEn: { not: null, lte: limite },
+          ...(filtros.almacenId ? { almacenId: filtros.almacenId } : {}),
+        },
+        include: {
+          variant: {
+            select: {
+              id: true,
+              sku: true,
+              nombre: true,
+              product: { select: { nombre: true } },
+            },
+          },
+          warehouse: {
+            select: {
+              id: true,
+              nombre: true,
+              sucursalId: true,
+              branch: { select: { nombre: true } },
+            },
+          },
+        },
+        orderBy: { venceEn: 'asc' },
+        take: 2000,
+      });
+
+      const hoy = new Date();
+      const items = filas.map((f) => {
+        const venceEn = f.venceEn as Date;
+        const diasParaVencer = Math.ceil(
+          (venceEn.getTime() - hoy.getTime()) / 86_400_000,
+        );
+        return {
+          loteId: f.id,
+          lotNumber: f.lotNumber,
+          venceEn: venceEn.toISOString(),
+          diasParaVencer,
+          vencido: diasParaVencer < 0,
+          cantidad: new Prisma.Decimal(f.cantidad).toString(),
+          varianteId: f.varianteId,
+          sku: f.variant.sku,
+          nombre: f.variant.nombre,
+          productoNombre: f.variant.product?.nombre ?? null,
+          almacenId: f.almacenId,
+          almacenNombre: f.warehouse.nombre,
+          sucursalId: f.warehouse.sucursalId,
+          sucursalNombre: f.warehouse.branch?.nombre ?? null,
+        };
+      });
+
+      const vencidos = items.filter((i) => i.vencido).length;
+      return {
+        total: items.length,
+        vencidos,
+        porVencer: items.length - vencidos,
+        diasAviso: dias,
+        items,
+      };
+    });
+  }
+
   // ─────────────────────────────── Reservas ─────────────────────────────────
 
   /** Lista reservas con filtros opcionales (almacén, estado). */
