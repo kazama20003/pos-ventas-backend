@@ -14,6 +14,7 @@ import { NotificationsModule } from './notificaciones/notificaciones.module';
 import { PaymentsModule } from './pagos/pagos.module';
 import { PromotionsModule } from './promociones/promociones.module';
 import { PurchasesModule } from './compras/compras.module';
+import { RestauranteModule } from './restaurante/restaurante.module';
 import { ReportsModule } from './reportes/reportes.module';
 import { BranchesModule } from './sucursales/sucursales.module';
 import { SuppliersModule } from './proveedores/proveedores.module';
@@ -38,6 +39,7 @@ import { UsersModule } from './usuarios/usuarios.module';
     PaymentsModule,
     FiscalModule,
     PurchasesModule,
+    RestauranteModule,
     CustomersModule,
     SuppliersModule,
     ReportsModule,
