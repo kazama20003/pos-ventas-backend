@@ -1224,13 +1224,80 @@ export class VentasService {
       },
     });
 
+    // FEFO: si la variante lleva lotes, consúmelos por vencimiento más próximo
+    // (sin vender vencidos) y atribuye el asiento a cada lote. Variantes sin
+    // lotes → sin cambios (lotes = []).
+    const lotes = await this.consumirLotesFEFO(
+      tx,
+      inquilinoId,
+      almacenId,
+      item.varianteId,
+      linea.cantidad,
+      linea.allowNegativeStock,
+    );
+
     await this.registrarAsientoVenta(
       tx,
       inquilinoId,
       ventaId,
       linea,
       new Prisma.Decimal(balance.costoPromedio),
+      lotes,
     );
+  }
+
+  /**
+   * Consumo FEFO (First-Expiry-First-Out): descuenta la cantidad vendida de los
+   * InventoryLot de la variante ordenados por vencimiento más próximo, saltando
+   * lotes ya vencidos (no se venden). Si la variante no tiene lotes, devuelve []
+   * y la venta se comporta como siempre. Si hay lotes pero no alcanzan (o solo
+   * quedan vencidos) y no se permite stock negativo, corta la venta.
+   */
+  private async consumirLotesFEFO(
+    tx: TxPrisma,
+    inquilinoId: string,
+    almacenId: string,
+    varianteId: string,
+    cantidad: Prisma.Decimal,
+    permitirNegativo: boolean,
+  ): Promise<{ loteId: string; cantidad: Prisma.Decimal }[]> {
+    const lotes = await tx.$queryRaw<
+      { id: string; cantidad: Prisma.Decimal; venceEn: Date | null }[]
+    >`SELECT "id", "cantidad", "venceEn" FROM "InventoryLot"
+      WHERE "inquilinoId" = ${inquilinoId}::uuid
+        AND "almacenId" = ${almacenId}::uuid
+        AND "varianteId" = ${varianteId}::uuid
+        AND "cantidad" > 0
+      ORDER BY "venceEn" ASC NULLS LAST, "creadoEn" ASC
+      FOR UPDATE`;
+
+    if (lotes.length === 0) return [];
+
+    const hoy = new Date();
+    const consumos: { loteId: string; cantidad: Prisma.Decimal }[] = [];
+    let restante = cantidad;
+
+    for (const lote of lotes) {
+      if (restante.lte(0)) break;
+      // No se venden lotes vencidos.
+      if (lote.venceEn && lote.venceEn < hoy) continue;
+      const disponible = new Prisma.Decimal(lote.cantidad);
+      const usar = disponible.lt(restante) ? disponible : restante;
+      await tx.inventoryLot.update({
+        where: { id: lote.id },
+        data: { cantidad: { decrement: usar } },
+      });
+      consumos.push({ loteId: lote.id, cantidad: usar });
+      restante = restante.sub(usar);
+    }
+
+    if (restante.gt(0) && !permitirNegativo) {
+      throw new ConflictException(
+        `Stock por lote insuficiente o vencido para la variante ${varianteId}: faltan ${restante.toString()}`,
+      );
+    }
+
+    return consumos;
   }
 
   private async registrarAsientoVenta(
@@ -1239,23 +1306,49 @@ export class VentasService {
     ventaId: string,
     linea: LineaCalculada,
     costoUnitario: Prisma.Decimal,
+    lotes: { loteId: string; cantidad: Prisma.Decimal }[] = [],
   ) {
-    await tx.inventoryLedgerEntry.create({
-      data: {
-        inquilinoId,
-        almacenId: linea.almacenId,
-        varianteId: linea.item.varianteId,
-        movementType: 'VENTA',
-        // Outbound movement stored negative so the ledger sums to on-hand.
-        cantidad: linea.cantidad.negated(),
-        costoUnitario,
-        totalCost: costoUnitario.mul(linea.cantidad).negated(),
-        referenciaType: 'VENTA',
-        referenciaId: ventaId,
-        idempotencyKey: `${ventaId}:${linea.almacenId}:${linea.item.varianteId}:${linea.lineNumber}`,
-        occurredAt: new Date(),
-      },
-    });
+    const asentar = async (
+      cantidad: Prisma.Decimal,
+      loteId: string | null,
+      sufijo: string,
+    ) => {
+      await tx.inventoryLedgerEntry.create({
+        data: {
+          inquilinoId,
+          almacenId: linea.almacenId,
+          varianteId: linea.item.varianteId,
+          loteId,
+          movementType: 'VENTA',
+          // Outbound movement stored negative so the ledger sums to on-hand.
+          cantidad: cantidad.negated(),
+          costoUnitario,
+          totalCost: costoUnitario.mul(cantidad).negated(),
+          referenciaType: 'VENTA',
+          referenciaId: ventaId,
+          idempotencyKey: `${ventaId}:${linea.almacenId}:${linea.item.varianteId}:${linea.lineNumber}${sufijo}`,
+          occurredAt: new Date(),
+        },
+      });
+    };
+
+    // Sin lotes: un único asiento por la línea (comportamiento histórico).
+    if (lotes.length === 0) {
+      await asentar(linea.cantidad, null, '');
+      return;
+    }
+
+    // Con lotes: un asiento por lote consumido, más un remanente sin lote si el
+    // consumo no cubrió toda la línea (solo posible con stock negativo permitido).
+    let cubierto = new Prisma.Decimal(0);
+    for (const l of lotes) {
+      await asentar(l.cantidad, l.loteId, `:${l.loteId}`);
+      cubierto = cubierto.add(l.cantidad);
+    }
+    const resto = linea.cantidad.sub(cubierto);
+    if (resto.gt(0)) {
+      await asentar(resto, null, ':resto');
+    }
   }
 
   private async exigirContextoComercial(

@@ -67,6 +67,18 @@ export class InventarioController {
     });
   }
 
+  @Get('vencimientos')
+  @RequierePermiso('inventario.listar')
+  vencimientos(
+    @Query('dias') dias?: string,
+    @Query('almacenId') almacenId?: string,
+  ) {
+    return this.inventario.vencimientos({
+      dias: dias ? Number(dias) : undefined,
+      almacenId: almacenId || undefined,
+    });
+  }
+
   @Post('nivel')
   @RequierePermiso('inventario.ajustar')
   definirNivelStock(@Body() dto: DefinirNivelStockDto) {
