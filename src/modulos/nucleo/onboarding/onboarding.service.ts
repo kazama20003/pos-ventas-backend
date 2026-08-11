@@ -307,6 +307,9 @@ export class OnboardingService {
         sucursales,
         cajas,
         productos,
+        productosFisicos,
+        conStock,
+        mesas,
         sesionesCaja,
         ventas,
         comprobantes,
@@ -315,6 +318,13 @@ export class OnboardingService {
         tx.branch.count({ where: { inquilinoId } }),
         tx.cashRegister.count({ where: { inquilinoId } }),
         tx.product.count({ where: { inquilinoId, estado: 'ACTIVO' } }),
+        tx.product.count({
+          where: { inquilinoId, estado: 'ACTIVO', kind: { not: 'SERVICIO' } },
+        }),
+        tx.stockBalance.count({ where: { inquilinoId, enStock: { gt: 0 } } }),
+        tx.restaurantTable.count({
+          where: { inquilinoId, estadoRegistro: 'ACTIVO' },
+        }),
         tx.cashSession.count({ where: { inquilinoId } }),
         tx.sale.count({ where: { inquilinoId } }),
         tx.electronicDocument.count({ where: { inquilinoId } }),
@@ -326,10 +336,21 @@ export class OnboardingService {
         sucursal_creada: sucursales > 0,
         caja_creada: cajas > 0,
         producto_creado: productos > 0,
+        producto_fisico_creado: productosFisicos > 0,
+        stock_cargado: conStock > 0,
+        mesas_creadas: mesas > 0,
         caja_abierta: sesionesCaja > 0,
         primera_venta_creada: ventas > 0,
         primer_comprobante_emitido: comprobantes > 0,
       };
+
+      // El recorrido se adapta al tipo de negocio real del tenant:
+      // - Solo servicios → sin paso de stock/compras.
+      // - Vende producto físico → paso "stock" (proveedor + compra) antes de
+      //   abrir caja.
+      // - Tiene mesas (restaurante) → la venta se guía por el salón.
+      const vendeFisico = productosFisicos > 0;
+      const esRestaurante = mesas > 0;
 
       const definiciones = [
         {
@@ -346,8 +367,21 @@ export class OnboardingService {
           flowKey: 'primera-venta',
           titulo: 'Haz tu primera venta',
           pasos: [
+            ...(vendeFisico
+              ? [
+                  {
+                    stepKey: 'stock',
+                    evento: 'stock_cargado',
+                    vista: '/compras',
+                  },
+                ]
+              : []),
             { stepKey: 'abrir-caja', evento: 'caja_abierta', vista: '/caja' },
-            { stepKey: 'vender', evento: 'primera_venta_creada', vista: '/ventas' },
+            {
+              stepKey: 'vender',
+              evento: 'primera_venta_creada',
+              vista: esRestaurante ? '/restaurante' : '/ventas',
+            },
             { stepKey: 'comprobante', evento: 'primer_comprobante_emitido', vista: '/facturacion' },
           ],
         },
