@@ -309,6 +309,7 @@ export class OnboardingService {
         productos,
         productosFisicos,
         conStock,
+        proveedores,
         mesas,
         sesionesCaja,
         ventas,
@@ -322,6 +323,7 @@ export class OnboardingService {
           where: { inquilinoId, estado: 'ACTIVO', kind: { not: 'SERVICIO' } },
         }),
         tx.stockBalance.count({ where: { inquilinoId, enStock: { gt: 0 } } }),
+        tx.supplier.count({ where: { inquilinoId } }),
         tx.restaurantTable.count({
           where: { inquilinoId, estadoRegistro: 'ACTIVO' },
         }),
@@ -337,6 +339,7 @@ export class OnboardingService {
         caja_creada: cajas > 0,
         producto_creado: productos > 0,
         producto_fisico_creado: productosFisicos > 0,
+        proveedor_registrado: proveedores > 0,
         stock_cargado: conStock > 0,
         mesas_creadas: mesas > 0,
         caja_abierta: sesionesCaja > 0,
@@ -367,8 +370,15 @@ export class OnboardingService {
           flowKey: 'primera-venta',
           titulo: 'Haz tu primera venta',
           pasos: [
+            // Solo negocios con producto físico pasan por proveedor y stock;
+            // un servicio (corte de cabello) no compra mercadería.
             ...(vendeFisico
               ? [
+                  {
+                    stepKey: 'proveedor',
+                    evento: 'proveedor_registrado',
+                    vista: '/proveedores',
+                  },
                   {
                     stepKey: 'stock',
                     evento: 'stock_cargado',

@@ -143,6 +143,14 @@ describe('Flujo usuario nuevo (e2e)', () => {
     expect(varianteId).toBeDefined();
   });
 
+  it('5b. registra un proveedor (paso del flujo con producto físico)', async () => {
+    await request(app.getHttpServer())
+      .post('/proveedores')
+      .set(auth())
+      .send({ codigo: 'PROV-1', razonSocial: 'Distribuidora E2E S.A.C.' })
+      .expect(201);
+  });
+
   it('6. flujos avanzan: producto hecho, ahora abrir caja', async () => {
     const res = await request(app.getHttpServer())
       .get('/onboarding/flujos')
