@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -199,9 +200,11 @@ export class CatalogoService {
           ? await this.resolverImpuesto(f.impuesto, cacheImpuesto)
           : null;
 
+        const esServicio = f.kind === 'SERVICIO';
         await this.crearProducto({
           codigo: f.codigo?.trim() || undefined,
           nombre: f.nombre.trim(),
+          kind: f.kind,
           marcaId,
           categoriaIds: categoriaId ? [categoriaId] : [],
           almacenId: dto.almacenId,
@@ -212,7 +215,7 @@ export class CatalogoService {
               precio: f.precio,
               cost: f.costo,
               barcode: f.barcode?.trim() || undefined,
-              stockInicial: f.stockInicial,
+              stockInicial: esServicio ? undefined : f.stockInicial,
               impuestoIds: impuestoId ? [impuestoId] : [],
             },
           ],
@@ -559,7 +562,9 @@ export class CatalogoService {
                 nombre: variante.nombre,
                 cost: variante.cost ?? 0,
                 attributes: variante.atributos ?? undefined,
-                isStockTracked: variante.isStockTracked ?? true,
+                // Los servicios no controlan inventario salvo pedido explícito.
+                isStockTracked:
+                  variante.isStockTracked ?? dto.kind !== 'SERVICIO',
                 allowNegativeStock: variante.allowNegativeStock ?? false,
                 taxes: {
                   create: (variante.impuestoIds ?? []).map((taxId, index) => ({
@@ -608,7 +613,7 @@ export class CatalogoService {
         }
 
         if (v.stockInicial && v.stockInicial > 0) {
-          if (v.isStockTracked === false)
+          if ((v.isStockTracked ?? dto.kind !== 'SERVICIO') === false)
             throw new BadRequestException(
               'No se puede cargar stock a una variante que no controla inventario',
             );
@@ -819,6 +824,26 @@ export class CatalogoService {
       if (dto.marcaId)
         await this.exigirConteo(tx.brand, inquilinoId, [dto.marcaId], 'Marca');
 
+      // Convertir a SERVICIO: exige que ninguna variante tenga stock y apaga
+      // el control de inventario de todas (un servicio no lleva kardex).
+      if (dto.kind === 'SERVICIO') {
+        const conSaldo = await tx.stockBalance.count({
+          where: {
+            inquilinoId,
+            enStock: { not: 0 },
+            variant: { productoId: id },
+          },
+        });
+        if (conSaldo > 0)
+          throw new ConflictException(
+            'No se puede convertir a servicio: el producto aún tiene stock',
+          );
+        await tx.productVariant.updateMany({
+          where: { inquilinoId, productoId: id },
+          data: { isStockTracked: false },
+        });
+      }
+
       // Datos a nivel producto. imagenUrl/marcaId = "" o cadena para quitar.
       try {
         await tx.product.update({
@@ -995,9 +1020,12 @@ export class CatalogoService {
     return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
       const producto = await tx.product.findFirst({
         where: { id: productoId, inquilinoId },
-        select: { id: true, codigo: true },
+        select: { id: true, codigo: true, kind: true },
       });
       if (!producto) throw new NotFoundException('Producto no encontrado');
+      // Los servicios no controlan inventario salvo pedido explícito.
+      const isStockTracked =
+        dto.isStockTracked ?? producto.kind !== 'SERVICIO';
       await this.exigirConteo(
         tx.unitOfMeasure,
         inquilinoId,
@@ -1036,7 +1064,7 @@ export class CatalogoService {
             nombre: dto.nombre,
             cost: dto.cost ?? 0,
             attributes: dto.atributos ?? undefined,
-            isStockTracked: dto.isStockTracked ?? true,
+            isStockTracked,
             allowNegativeStock: dto.allowNegativeStock ?? false,
             taxes: {
               create: (dto.impuestoIds ?? []).map((taxId, index) => ({
@@ -1061,6 +1089,10 @@ export class CatalogoService {
           dto.precio,
         );
       if (dto.stockInicial && dto.stockInicial > 0) {
+        if (!isStockTracked)
+          throw new BadRequestException(
+            'No se puede cargar stock a una variante que no controla inventario',
+          );
         const almacenId = await this.resolverAlmacen(
           tx,
           inquilinoId,
@@ -1105,6 +1137,18 @@ export class CatalogoService {
         'Impuesto',
       );
 
+      // Desactivar control de inventario exige saldo cero: si quedara stock,
+      // el saldo se volvería invisible/incoherente.
+      if (dto.isStockTracked === false) {
+        const conSaldo = await tx.stockBalance.count({
+          where: { inquilinoId, varianteId, enStock: { not: 0 } },
+        });
+        if (conSaldo > 0)
+          throw new ConflictException(
+            'No se puede desactivar el control de inventario: la variante aún tiene stock',
+          );
+      }
+
       try {
         await tx.productVariant.update({
           where: { id: varianteId },
@@ -1115,6 +1159,7 @@ export class CatalogoService {
             unidadMedidaId: dto.unidadMedidaId,
             cost: dto.cost,
             attributes: dto.atributos ?? undefined,
+            isStockTracked: dto.isStockTracked,
           },
         });
       } catch (e) {

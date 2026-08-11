@@ -438,6 +438,12 @@ export class ActualizarVarianteDto {
   @IsOptional()
   atributos?: Record<string, string>;
 
+  // Permite corregir una variante mal creada (p. ej. servicio con control de
+  // inventario). Pasar a false exige saldo cero en todos los almacenes.
+  @IsOptional()
+  @IsBoolean()
+  isStockTracked?: boolean;
+
   @IsOptional()
   @IsArray()
   @IsUUID('4', { each: true })
@@ -480,6 +486,11 @@ export class ImportarProductoFilaDto {
   @IsString()
   @IsNotEmpty()
   nombre!: string;
+
+  // Tipo de producto. Default: ESTANDAR. Si es SERVICIO se ignora el stock.
+  @IsOptional()
+  @IsEnum(TipoProductoDto)
+  kind?: TipoProductoDto;
 
   @IsOptional()
   @IsString()

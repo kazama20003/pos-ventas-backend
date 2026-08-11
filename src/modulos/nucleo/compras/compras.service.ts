@@ -115,6 +115,24 @@ export class ComprasService {
       });
       if (existente) return { ...existente, idempotente: true };
 
+      // Un servicio no se recepciona: nada de stock/kardex/lotes para
+      // variantes que no controlan inventario.
+      const sinInventario = await tx.productVariant.findMany({
+        where: {
+          inquilinoId,
+          id: { in: dto.items.map((i) => i.varianteId) },
+          isStockTracked: false,
+        },
+        select: { sku: true },
+      });
+      if (sinInventario.length > 0) {
+        throw new ConflictException(
+          `No se puede recepcionar variantes sin control de inventario (servicios): ${sinInventario
+            .map((v) => v.sku)
+            .join(', ')}`,
+        );
+      }
+
       let subtotal = new Prisma.Decimal(0);
       let totalImpuesto = new Prisma.Decimal(0);
       const lineas = dto.items.map((item) => {
