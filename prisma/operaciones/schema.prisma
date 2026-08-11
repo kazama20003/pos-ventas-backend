@@ -2385,3 +2385,126 @@ model OnboardingProgress {
   @@unique([inquilinoId, userId, flowKey, stepKey])
   @@index([inquilinoId, flowKey])
 }
+
+// ─────────────────────────── Restaurante / mesas ──────────────────────────
+enum EstadoMesa {
+  LIBRE
+  OCUPADA
+  CUENTA
+  RESERVADA
+  INACTIVA
+}
+
+enum TipoComanda {
+  MESA
+  LLEVAR
+  DELIVERY
+}
+
+enum EstadoComanda {
+  ABIERTA
+  EN_COCINA
+  SERVIDA
+  POR_PAGAR
+  CERRADA
+  CANCELADA
+}
+
+enum EstadoCocinaItem {
+  PENDIENTE
+  EN_PREPARACION
+  LISTO
+  ENTREGADO
+  CANCELADO
+}
+
+enum EstacionCocina {
+  COCINA
+  BARRA
+  OTRO
+}
+
+/// Mesa física del salón (restaurante). Posición x/y para el mapa de mesas.
+model RestaurantTable {
+  id             String         @id @default(uuid()) @db.Uuid
+  inquilinoId    String         @db.Uuid
+  sucursalId     String         @db.Uuid
+  codigo         String
+  nombre         String
+  zona           String?
+  capacidad      Int            @default(2)
+  posX           Int            @default(0)
+  posY           Int            @default(0)
+  estado         EstadoMesa     @default(LIBRE)
+  estadoRegistro EstadoRegistro @default(ACTIVO)
+  creadoEn       DateTime       @default(now())
+  actualizadoEn  DateTime       @updatedAt
+  comandas       DiningOrder[]
+
+  @@unique([inquilinoId, sucursalId, codigo])
+  @@index([inquilinoId, sucursalId, estado])
+}
+
+/// Comanda / cuenta abierta (por mesa, para llevar o delivery). Al cobrar se
+/// enlaza con la Sale generada (ventaId) y se cierra.
+model DiningOrder {
+  id            String            @id @default(uuid()) @db.Uuid
+  inquilinoId   String            @db.Uuid
+  sucursalId    String            @db.Uuid
+  mesaId        String?           @db.Uuid
+  tipo          TipoComanda       @default(MESA)
+  estado        EstadoComanda     @default(ABIERTA)
+  mozoId        String?           @db.Uuid
+  comensales    Int               @default(1)
+  notas         String?
+  propina       Decimal           @default(0) @db.Decimal(18, 2)
+  subtotal      Decimal           @default(0) @db.Decimal(18, 2)
+  total         Decimal           @default(0) @db.Decimal(18, 2)
+  ventaId       String?           @db.Uuid
+  aperturaEn    DateTime          @default(now())
+  cierreEn      DateTime?
+  creadoEn      DateTime          @default(now())
+  actualizadoEn DateTime          @updatedAt
+  mesa          RestaurantTable?  @relation(fields: [mesaId], references: [id], onDelete: SetNull)
+  items         DiningOrderItem[]
+
+  @@index([inquilinoId, sucursalId, estado])
+  @@index([inquilinoId, mesaId])
+}
+
+/// Línea de comanda: un plato/bebida pedido, con su estado de cocina (KDS) y
+/// modificadores. Guarda snapshot de nombre y precio al momento del pedido.
+model DiningOrderItem {
+  id             String                    @id @default(uuid()) @db.Uuid
+  inquilinoId    String                    @db.Uuid
+  comandaId      String                    @db.Uuid
+  varianteId     String                    @db.Uuid
+  productoNombre String
+  cantidad       Decimal                   @db.Decimal(18, 3)
+  precioUnitario Decimal                   @db.Decimal(18, 2)
+  notas          String?
+  estacion       EstacionCocina            @default(COCINA)
+  estadoCocina   EstadoCocinaItem          @default(PENDIENTE)
+  enviadoEn      DateTime?
+  listoEn        DateTime?
+  creadoEn       DateTime                  @default(now())
+  actualizadoEn  DateTime                  @updatedAt
+  comanda        DiningOrder               @relation(fields: [comandaId], references: [id], onDelete: Cascade)
+  modificadores  DiningOrderItemModifier[]
+
+  @@index([inquilinoId, comandaId])
+  @@index([inquilinoId, estadoCocina, estacion])
+}
+
+/// Modificador de una línea de comanda (ej. "sin cebolla", "extra queso" +2.00).
+model DiningOrderItemModifier {
+  id          String          @id @default(uuid()) @db.Uuid
+  inquilinoId String          @db.Uuid
+  itemId      String          @db.Uuid
+  nombre      String
+  precioExtra Decimal         @default(0) @db.Decimal(18, 2)
+  creadoEn    DateTime        @default(now())
+  item        DiningOrderItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([inquilinoId, itemId])
+}

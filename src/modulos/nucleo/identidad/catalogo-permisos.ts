@@ -299,6 +299,36 @@ export const CATALOGO_PERMISOS: DefinicionPermiso[] = [
     descripcion: 'Consultar la bandeja de notificaciones',
   },
   {
+    clave: 'restaurante.gestionar',
+    resource: 'restaurante',
+    action: 'gestionar',
+    descripcion: 'Gestionar mesas y zonas del salón',
+  },
+  {
+    clave: 'restaurante.operar',
+    resource: 'restaurante',
+    action: 'operar',
+    descripcion: 'Abrir comandas, agregar ítems y enviar a cocina',
+  },
+  {
+    clave: 'restaurante.cobrar',
+    resource: 'restaurante',
+    action: 'cobrar',
+    descripcion: 'Cobrar comandas (cuenta) y cerrar mesas',
+  },
+  {
+    clave: 'restaurante.cocina',
+    resource: 'restaurante',
+    action: 'cocina',
+    descripcion: 'Operar el KDS y actualizar el estado de cocina de los ítems',
+  },
+  {
+    clave: 'restaurante.leer',
+    resource: 'restaurante',
+    action: 'leer',
+    descripcion: 'Consultar mesas, mapa y comandas',
+  },
+  {
     clave: 'webhooks.gestionar',
     resource: 'webhooks',
     action: 'gestionar',
