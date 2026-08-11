@@ -19,6 +19,7 @@ import {
 
 export type PasoOnboarding =
   | 'producto'
+  | 'proveedor'
   | 'stock'
   | 'caja'
   | 'venta'
@@ -31,6 +32,7 @@ export interface EstadoOnboarding {
   pasos: {
     productoCreado: boolean;
     necesitaStock: boolean;
+    proveedorRegistrado: boolean;
     stockListo: boolean;
     cajaAbierta: boolean;
     primeraVenta: boolean;
@@ -225,8 +227,9 @@ export class OnboardingService {
 
   /**
    * Estado del onboarding guiado. Deriva el "paso actual" (un solo foco a la
-   * vez, sin listas) de datos reales del tenant: crear producto/servicio → dar
-   * stock (solo si vende productos físicos) → abrir caja → primera venta. El
+   * vez, sin listas) de datos reales del tenant: crear producto/servicio →
+   * registrar proveedor → dar stock (ambos solo si vende productos físicos) →
+   * abrir caja → primera venta. El
    * flag de descartado y la fecha de completado se persisten en OnboardingState.
    */
   async estado(inquilinoId: string): Promise<EstadoOnboarding> {
@@ -240,6 +243,7 @@ export class OnboardingService {
       const [
         productosActivos,
         productosFisicos,
+        proveedores,
         conStock,
         cajasAbiertas,
         ventas,
@@ -248,6 +252,7 @@ export class OnboardingService {
         tx.product.count({
           where: { inquilinoId, estado: 'ACTIVO', kind: { not: 'SERVICIO' } },
         }),
+        tx.supplier.count({ where: { inquilinoId } }),
         tx.stockBalance.count({ where: { inquilinoId, enStock: { gt: 0 } } }),
         tx.cashSession.count({ where: { inquilinoId, estado: 'ABIERTA' } }),
         tx.sale.count({ where: { inquilinoId } }),
@@ -255,19 +260,26 @@ export class OnboardingService {
 
       const productoCreado = productosActivos > 0;
       const necesitaStock = productosFisicos > 0;
+      const proveedorRegistrado = proveedores > 0;
       const stockListo = conStock > 0;
       const cajaAbierta = cajasAbiertas > 0;
       const primeraVenta = ventas > 0;
 
+      // El stock entra por una compra, y la compra exige un proveedor: si
+      // vende producto físico y aún no registró ninguno, ese es el foco antes
+      // de "dar stock". Si el stock ya existe (p. ej. ajuste de inventario),
+      // el paso de proveedor se omite solo.
       const pasoActual: PasoOnboarding = !productoCreado
         ? 'producto'
-        : necesitaStock && !stockListo
-          ? 'stock'
-          : !cajaAbierta
-            ? 'caja'
-            : !primeraVenta
-              ? 'venta'
-              : 'completado';
+        : necesitaStock && !stockListo && !proveedorRegistrado
+          ? 'proveedor'
+          : necesitaStock && !stockListo
+            ? 'stock'
+            : !cajaAbierta
+              ? 'caja'
+              : !primeraVenta
+                ? 'venta'
+                : 'completado';
 
       // Sella la fecha de completado la primera vez que hay una venta.
       if (primeraVenta && !estado.completadoEn) {
@@ -284,6 +296,7 @@ export class OnboardingService {
         pasos: {
           productoCreado,
           necesitaStock,
+          proveedorRegistrado,
           stockListo,
           cajaAbierta,
           primeraVenta,
