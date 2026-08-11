@@ -2357,3 +2357,31 @@ model OnboardingState {
 
   @@index([inquilinoId])
 }
+
+enum EstadoPasoOnboarding {
+  PENDIENTE
+  COMPLETADO
+  OMITIDO
+  DESCARTADO
+}
+
+/// Progreso granular del onboarding contextual: una fila por tenant(+usuario
+/// opcional)+flujo+paso. La completitud "real" se deriva de datos (ventas,
+/// productos, etc.); aquí solo se persisten overrides del usuario (omitido/
+/// descartado) y sellos de completado para pasos no derivables.
+model OnboardingProgress {
+  id            String               @id @default(uuid()) @db.Uuid
+  inquilinoId   String               @db.Uuid
+  userId        String?              @db.Uuid
+  flowKey       String
+  stepKey       String
+  status        EstadoPasoOnboarding @default(PENDIENTE)
+  completadoEn  DateTime?
+  descartadoEn  DateTime?
+  metadata      Json?
+  creadoEn      DateTime             @default(now())
+  actualizadoEn DateTime             @updatedAt
+
+  @@unique([inquilinoId, userId, flowKey, stepKey])
+  @@index([inquilinoId, flowKey])
+}

@@ -292,6 +292,148 @@ export class OnboardingService {
     });
   }
 
+  /**
+   * Flujos de onboarding contextual. Cada flujo agrupa pasos cuya completitud
+   * se DERIVA de datos reales del tenant (eventos de negocio: empresa creada,
+   * primera venta, primer comprobante, etc.), mezclada con overrides
+   * persistidos por usuario (OMITIDO/DESCARTADO en OnboardingProgress).
+   * Extensible: para añadir un flujo/paso, agrega la entrada en `definiciones`
+   * y su verificación en `hechos`.
+   */
+  async flujos(inquilinoId: string, userId?: string) {
+    return this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      const [
+        empresas,
+        sucursales,
+        cajas,
+        productos,
+        sesionesCaja,
+        ventas,
+        comprobantes,
+      ] = await Promise.all([
+        tx.company.count({ where: { inquilinoId } }),
+        tx.branch.count({ where: { inquilinoId } }),
+        tx.cashRegister.count({ where: { inquilinoId } }),
+        tx.product.count({ where: { inquilinoId, estado: 'ACTIVO' } }),
+        tx.cashSession.count({ where: { inquilinoId } }),
+        tx.sale.count({ where: { inquilinoId } }),
+        tx.electronicDocument.count({ where: { inquilinoId } }),
+      ]);
+
+      // Eventos reales del sistema → hechos derivados.
+      const hechos: Record<string, boolean> = {
+        empresa_creada: empresas > 0,
+        sucursal_creada: sucursales > 0,
+        caja_creada: cajas > 0,
+        producto_creado: productos > 0,
+        caja_abierta: sesionesCaja > 0,
+        primera_venta_creada: ventas > 0,
+        primer_comprobante_emitido: comprobantes > 0,
+      };
+
+      const definiciones = [
+        {
+          flowKey: 'puesta-en-marcha',
+          titulo: 'Pon tu negocio en marcha',
+          pasos: [
+            { stepKey: 'empresa', evento: 'empresa_creada', vista: '/configuracion' },
+            { stepKey: 'sucursal', evento: 'sucursal_creada', vista: '/sucursales' },
+            { stepKey: 'caja', evento: 'caja_creada', vista: '/sucursales' },
+            { stepKey: 'producto', evento: 'producto_creado', vista: '/productos/nuevo' },
+          ],
+        },
+        {
+          flowKey: 'primera-venta',
+          titulo: 'Haz tu primera venta',
+          pasos: [
+            { stepKey: 'abrir-caja', evento: 'caja_abierta', vista: '/caja' },
+            { stepKey: 'vender', evento: 'primera_venta_creada', vista: '/ventas' },
+            { stepKey: 'comprobante', evento: 'primer_comprobante_emitido', vista: '/facturacion' },
+          ],
+        },
+      ];
+
+      // Overrides persistidos (del usuario o a nivel tenant cuando userId null).
+      const overrides = await tx.onboardingProgress.findMany({
+        where: {
+          inquilinoId,
+          OR: [{ userId: userId ?? null }, { userId: null }],
+        },
+      });
+      const buscarOverride = (flowKey: string, stepKey: string) =>
+        overrides.find(
+          (o) =>
+            o.flowKey === flowKey &&
+            o.stepKey === stepKey &&
+            (o.userId === (userId ?? null) || o.userId === null),
+        );
+
+      const flujosResueltos = definiciones.map((f) => {
+        const flujoOverride = buscarOverride(f.flowKey, '_flow');
+        const pasos = f.pasos.map((p) => {
+          const derivado = hechos[p.evento] === true;
+          const override = buscarOverride(f.flowKey, p.stepKey);
+          const status = derivado
+            ? 'COMPLETADO'
+            : (override?.status ?? 'PENDIENTE');
+          return { ...p, status, derivado };
+        });
+        const completados = pasos.filter(
+          (p) => p.status === 'COMPLETADO' || p.status === 'OMITIDO',
+        ).length;
+        const pasoActivo =
+          pasos.find((p) => p.status === 'PENDIENTE')?.stepKey ?? null;
+        return {
+          flowKey: f.flowKey,
+          titulo: f.titulo,
+          descartado: flujoOverride?.status === 'DESCARTADO',
+          completado: completados === pasos.length,
+          pasoActivo,
+          pasos,
+        };
+      });
+
+      return { hechos, flujos: flujosResueltos };
+    });
+  }
+
+  /**
+   * Override manual de un paso o flujo ('_flow' como stepKey descarta el flujo
+   * completo): OMITIDO, DESCARTADO o de vuelta a PENDIENTE. Upsert idempotente
+   * por tenant+usuario+flujo+paso.
+   */
+  async actualizarPaso(
+    inquilinoId: string,
+    userId: string | null,
+    flowKey: string,
+    stepKey: string,
+    status: 'PENDIENTE' | 'OMITIDO' | 'DESCARTADO',
+  ) {
+    await this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+      // findFirst+update en vez de upsert: con userId null el unique de
+      // Postgres trata los NULL como distintos y el upsert duplicaría filas.
+      const existente = await tx.onboardingProgress.findFirst({
+        where: { inquilinoId, userId, flowKey, stepKey },
+        select: { id: true },
+      });
+      const data = {
+        status,
+        descartadoEn: status === 'DESCARTADO' ? new Date() : null,
+      };
+      if (existente) {
+        await tx.onboardingProgress.update({
+          where: { id: existente.id },
+          data,
+        });
+      } else {
+        await tx.onboardingProgress.create({
+          data: { inquilinoId, userId, flowKey, stepKey, ...data },
+        });
+      }
+    });
+    return this.flujos(inquilinoId, userId ?? undefined);
+  }
+
   /** Marca la guía como descartada (el usuario la cierra). Idempotente. */
   async descartar(inquilinoId: string): Promise<EstadoOnboarding> {
     await this.prisma.ejecutarEnTenant(inquilinoId, (tx) =>
