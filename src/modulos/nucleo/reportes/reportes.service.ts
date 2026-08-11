@@ -296,26 +296,108 @@ export class ReportesService {
     });
   }
 
-  /** Panel unificado para el dashboard del frontend. */
+  /**
+   * Panel estratégico unificado para el dashboard: ventas de hoy con
+   * comparación vs ayer, mes, serie de 7 días, top productos (hoy y mes),
+   * finanzas (CxC/CxP, inventario valorizado) y señales operativas del día
+   * (bajo stock, cajas abiertas, clientes nuevos, lotes por vencer).
+   */
   async dashboard() {
+    const { inquilinoId } = this.contexto.obtenerObligatorio();
     const ahora = new Date();
     const inicioDia = new Date(
       ahora.getFullYear(),
       ahora.getMonth(),
       ahora.getDate(),
     );
+    const DIA = 24 * 60 * 60 * 1000;
+    const inicioAyer = new Date(inicioDia.getTime() - DIA);
     const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-    const finDia = new Date(inicioDia.getTime() + 24 * 60 * 60 * 1000);
+    const finDia = new Date(inicioDia.getTime() + DIA);
+    const inicioSemana = new Date(inicioDia.getTime() - 6 * DIA);
+    const enTreintaDias = new Date(inicioDia.getTime() + 30 * DIA);
 
-    const [hoy, mes, top, inventario, cxc, cxp] = await Promise.all([
+    const [
+      hoy,
+      ayer,
+      mes,
+      serieSemana,
+      topHoy,
+      topMes,
+      inventario,
+      cxc,
+      cxp,
+      operacion,
+    ] = await Promise.all([
       this.ventasResumen({ desde: inicioDia, hasta: finDia }),
+      this.ventasResumen({ desde: inicioAyer, hasta: inicioDia }),
       this.ventasResumen({ desde: inicioMes, hasta: finDia }),
+      this.ventasPorDia({ desde: inicioSemana, hasta: finDia }),
+      this.topProductos({ desde: inicioDia, hasta: finDia }, 5),
       this.topProductos({ desde: inicioMes, hasta: finDia }, 5),
       this.inventarioValorizado(),
       this.cuentasPorCobrar(),
       this.cuentasPorPagar(),
+      this.prisma.ejecutarEnTenant(inquilinoId, async (tx) => {
+        const [bajoStock, cajasAbiertas, clientesNuevosMes, lotesPorVencer] =
+          await Promise.all([
+            tx.$queryRaw<
+              { n: bigint }[]
+            >`SELECT COUNT(*) AS n FROM "StockBalance"
+              WHERE "inquilinoId" = ${inquilinoId}::uuid
+                AND "stockMinimo" > 0 AND "available" <= "stockMinimo"`,
+            tx.cashSession.count({ where: { inquilinoId, estado: 'ABIERTA' } }),
+            tx.customer.count({
+              where: { inquilinoId, creadoEn: { gte: inicioMes } },
+            }),
+            tx.inventoryLot.count({
+              where: {
+                inquilinoId,
+                cantidad: { gt: 0 },
+                venceEn: { not: null, lte: enTreintaDias },
+              },
+            }),
+          ]);
+        return {
+          bajoStock: Number(bajoStock[0]?.n ?? 0),
+          cajasAbiertas,
+          clientesNuevosMes,
+          lotesPorVencer,
+        };
+      }),
     ]);
 
-    return { hoy, mes, topProductos: top, inventario, cxc, cxp };
+    // Serie normalizada de 7 días (rellena días sin ventas con 0).
+    const porDia = new Map(
+      serieSemana.map((f) => [
+        new Date(f.dia).toISOString().slice(0, 10),
+        {
+          total: new Prisma.Decimal(f.total).toFixed(2),
+          cantidad: Number(f.cantidad),
+        },
+      ]),
+    );
+    const semana = Array.from({ length: 7 }, (_, i) => {
+      const fecha = new Date(inicioSemana.getTime() + i * DIA);
+      const clave = fecha.toISOString().slice(0, 10);
+      return {
+        fecha: clave,
+        total: porDia.get(clave)?.total ?? '0.00',
+        cantidad: porDia.get(clave)?.cantidad ?? 0,
+      };
+    });
+
+    return {
+      hoy,
+      ayer,
+      mes,
+      semana,
+      topProductosHoy: topHoy,
+      topProductos: topMes,
+      inventario,
+      cxc,
+      cxp,
+      operacion,
+    };
   }
 }
