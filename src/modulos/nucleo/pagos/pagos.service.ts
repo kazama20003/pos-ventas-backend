@@ -219,9 +219,10 @@ export class PagosService {
    * Procesa un webhook entrante de la pasarela (sin JWT). Resuelve el tenant por
    * la cuenta del comercio, guarda el evento y actualiza la transacción/intento.
    *
-   * NOTA (RLS): la búsqueda de la cuenta corre sin contexto de tenant; requiere
-   * rol DB exento de RLS en PaymentProviderAccount (o el runtime como owner). Las
-   * escrituras posteriores sí van tenant-scoped. Ver memoria rls-activacion-pos-app.
+   * NOTA (RLS): la búsqueda de la cuenta corre sin contexto de tenant, por lo
+   * que usa la función SECURITY DEFINER resolver_cuenta_webhook_pago (lectura
+   * cross-tenant sancionada, mismo patrón que resolver_login_por_email). Las
+   * escrituras posteriores sí van tenant-scoped.
    */
   async procesarWebhook(
     proveedorNombre: string,
@@ -235,13 +236,21 @@ export class PagosService {
       );
     }
 
-    const cuenta = await this.prisma.paymentProviderAccount.findFirst({
-      where: {
-        proveedor: proveedorNombre,
-        referenciaComerciante: evento.referenciaComerciante,
-      },
-      select: { id: true, inquilinoId: true, referenciaSecretaCifrada: true },
-    });
+    const filas = await this.prisma.$queryRaw<
+      {
+        id: string;
+        inquilino_id: string;
+        referencia_secreta_cifrada: string | null;
+      }[]
+    >`SELECT id, inquilino_id, referencia_secreta_cifrada
+      FROM resolver_cuenta_webhook_pago(${proveedorNombre}, ${evento.referenciaComerciante})`;
+    const cuenta = filas[0]
+      ? {
+          id: filas[0].id,
+          inquilinoId: filas[0].inquilino_id,
+          referenciaSecretaCifrada: filas[0].referencia_secreta_cifrada,
+        }
+      : null;
     if (!cuenta) {
       throw new NotFoundException('Cuenta de proveedor no encontrada');
     }

@@ -46,6 +46,12 @@ export class AppConfigService {
       throw new Error('CORS_ORIGIN must list explicit origins in production');
     }
     this.corsOrigin = corsOrigin ?? '*';
+    // Sin esta llave, CifradoService guarda los secretos EN PLANO (solo
+    // tolerable en dev). En producción es obligatoria; la valida en detalle
+    // (longitud/formato) el propio CifradoService al cargarla.
+    if (this.environment === 'production' && !process.env.APP_ENCRYPTION_KEY) {
+      throw new Error('APP_ENCRYPTION_KEY is required in production');
+    }
     this.logLevel = process.env.LOG_LEVEL ?? 'log';
     this.databasePoolMax = Number(process.env.DATABASE_POOL_MAX ?? 10);
     this.resendApiKey = process.env.RESEND_API_KEY ?? null;

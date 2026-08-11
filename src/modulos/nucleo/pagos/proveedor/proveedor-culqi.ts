@@ -87,12 +87,14 @@ export class ProveedorPagoCulqi implements ProveedorPago {
   ): boolean {
     const firmaRecibida =
       headers['x-culqi-signature'] ?? headers['culqi-signature'];
-    // Sin secreto o sin firma no se puede verificar: se acepta pero se advierte.
+    // Sin secreto o sin firma no se puede verificar: se rechaza (fail-closed).
+    // El endpoint de webhooks es público; aceptar sin verificar permitiría
+    // inyectar eventos de pago falsos.
     if (!secreto || !firmaRecibida) {
       this.logger.warn(
-        'Webhook Culqi sin firma verificable (falta secreto o cabecera de firma)',
+        'Webhook Culqi rechazado: sin firma verificable (falta secreto o cabecera de firma)',
       );
-      return true;
+      return false;
     }
     const esperada = createHmac('sha256', secreto).update(cuerpo).digest('hex');
     const a = Buffer.from(esperada);
